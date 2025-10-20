@@ -1,0 +1,265 @@
+const Player = require('./Player');
+const Deck = require('./Deck');
+
+/**
+ * ゲームクラス - 5枚麻雀ゲームの状態とロジックを管理
+ */
+class Game {
+  constructor() {
+    this.players = [];              // プレイヤー配列（最大2人）
+    this.deck = new Deck();         // 山牌
+    this.currentPlayerIndex = 0;    // 現在の手番プレイヤーのインデックス
+    this.gameState = 'waiting';     // ゲーム状態: 'waiting'|'playing'|'finished'
+    this.winner = null;             // 勝者
+    this.gameId = this.generateGameId();
+    this.lastActivity = Date.now(); // 最後のアクティビティ時刻
+    this.createdAt = Date.now();    // ゲーム作成時刻
+  }
+
+  /**
+   * ゲームIDを生成
+   * @returns {string} ランダムなゲームID
+   */
+  generateGameId() {
+    return Math.random().toString(36).substr(2, 9);
+  }
+
+  /**
+   * プレイヤーをゲームに追加
+   * @param {string} playerId - プレイヤーID
+   * @param {string} playerName - プレイヤー名
+   * @returns {boolean} 追加に成功したかどうか
+   */
+  addPlayer(playerId, playerName) {
+    if (this.players.length >= 2) {
+      return false; // 既に2人のプレイヤーがいる
+    }
+    
+    // 既に同じIDのプレイヤーがいないかチェック
+    if (this.players.some(player => player.id === playerId)) {
+      return false;
+    }
+
+    const player = new Player(playerId, playerName);
+    this.players.push(player);
+    
+    // 2人揃ったらゲームを開始
+    if (this.players.length === 2) {
+      this.startGame();
+    }
+    
+    return true;
+  }
+
+  /**
+   * プレイヤーをゲームから削除
+   * @param {string} playerId - 削除するプレイヤーID
+   * @returns {boolean} 削除に成功したかどうか
+   */
+  removePlayer(playerId) {
+    const index = this.players.findIndex(player => player.id === playerId);
+    if (index !== -1) {
+      this.players.splice(index, 1);
+      
+      // プレイヤーが削除されたらゲームを待機状態に戻す
+      if (this.gameState === 'playing') {
+        this.gameState = 'waiting';
+      }
+      
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * ゲームを開始
+   * 要件1.1, 1.3に対応：各プレイヤーに4枚配り、ランダムに先手を決定
+   */
+  startGame() {
+    if (this.players.length !== 2) {
+      throw new Error('ゲームを開始するには2人のプレイヤーが必要です');
+    }
+
+    // プレイヤーの状態をリセット
+    this.players.forEach(player => player.reset());
+    
+    // デッキをリセット
+    this.deck.reset();
+    
+    // 各プレイヤーに4枚ずつ配る（要件1.1）
+    this.dealInitialTiles();
+    
+    // ランダムに先手プレイヤーを決定（要件1.3）
+    this.currentPlayerIndex = Math.floor(Math.random() * 2);
+    
+    // ゲーム状態を「プレイ中」に変更
+    this.gameState = 'playing';
+    this.winner = null;
+  }
+
+  /**
+   * 初期牌配り - 各プレイヤーに4枚ずつ配る
+   */
+  dealInitialTiles() {
+    for (let i = 0; i < 4; i++) {
+      for (const player of this.players) {
+        const tile = this.deck.drawTile();
+        if (tile) {
+          player.addTileToHand(tile);
+        }
+      }
+    }
+  }
+
+  /**
+   * 現在の手番プレイヤーを取得
+   * @returns {Player|null} 現在の手番プレイヤー
+   */
+  getCurrentPlayer() {
+    if (this.gameState !== 'playing' || this.currentPlayerIndex < 0 || this.currentPlayerIndex >= this.players.length) {
+      return null;
+    }
+    return this.players[this.currentPlayerIndex];
+  }
+
+  /**
+   * 相手プレイヤーを取得
+   * @param {string} playerId - 基準となるプレイヤーID
+   * @returns {Player|null} 相手プレイヤー
+   */
+  getOpponentPlayer(playerId) {
+    return this.players.find(player => player.id !== playerId) || null;
+  }
+
+  /**
+   * プレイヤーIDでプレイヤーを取得
+   * @param {string} playerId - プレイヤーID
+   * @returns {Player|null} プレイヤー
+   */
+  getPlayer(playerId) {
+    return this.players.find(player => player.id === playerId) || null;
+  }
+
+  /**
+   * 手番を次のプレイヤーに移す
+   * 要件2.4に対応：手番を相手プレイヤーに移す
+   */
+  nextTurn() {
+    if (this.gameState === 'playing') {
+      this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
+      this.updateLastActivity();
+    }
+  }
+
+  /**
+   * 指定されたプレイヤーが現在の手番かどうかを判定
+   * @param {string} playerId - プレイヤーID
+   * @returns {boolean} 現在の手番かどうか
+   */
+  isPlayerTurn(playerId) {
+    const currentPlayer = this.getCurrentPlayer();
+    return currentPlayer && currentPlayer.id === playerId;
+  }
+
+  /**
+   * ゲームを終了
+   * @param {string} winnerId - 勝者のプレイヤーID
+   */
+  endGame(winnerId = null) {
+    this.gameState = 'finished';
+    if (winnerId) {
+      this.winner = this.getPlayer(winnerId);
+    }
+  }
+
+  /**
+   * 流局処理 - 山が空になった場合
+   */
+  declareDraw() {
+    this.gameState = 'finished';
+    this.winner = null; // 引き分け
+  }
+
+  /**
+   * ゲームの状態情報を取得
+   * @returns {Object} ゲーム状態情報
+   */
+  getGameState() {
+    return {
+      gameId: this.gameId,
+      state: this.gameState,
+      players: this.players.map(player => ({
+        id: player.id,
+        name: player.name,
+        handSize: player.getHandSize(),
+        isRiichi: player.isRiichi,
+        discardedTiles: player.getDiscardedTilesDisplay()
+      })),
+      currentPlayerIndex: this.currentPlayerIndex,
+      currentPlayerId: this.getCurrentPlayer()?.id || null,
+      remainingTiles: this.deck.getRemainingCount(),
+      winner: this.winner ? {
+        id: this.winner.id,
+        name: this.winner.name
+      } : null
+    };
+  }
+
+  /**
+   * 特定プレイヤー向けのゲーム状態を取得（手牌情報を含む）
+   * @param {string} playerId - プレイヤーID
+   * @returns {Object} プレイヤー向けゲーム状態情報
+   */
+  getGameStateForPlayer(playerId) {
+    const gameState = this.getGameState();
+    const player = this.getPlayer(playerId);
+    
+    if (player) {
+      gameState.playerHand = player.getHandDisplay();
+      gameState.playerHandTiles = player.hand; // 実際のTileオブジェクト
+    }
+    
+    return gameState;
+  }
+
+  /**
+   * ゲームがプレイ可能な状態かどうかを判定
+   * @returns {boolean} プレイ可能かどうか
+   */
+  isPlayable() {
+    return this.gameState === 'playing' && this.players.length === 2;
+  }
+
+  /**
+   * ゲームが終了しているかどうかを判定
+   * @returns {boolean} 終了しているかどうか
+   */
+  isFinished() {
+    return this.gameState === 'finished';
+  }
+
+  /**
+   * 山が空かどうかを判定
+   * @returns {boolean} 山が空かどうか
+   */
+  isDeckEmpty() {
+    return this.deck.isEmpty();
+  }
+
+  /**
+   * 最後のアクティビティ時刻を更新
+   */
+  updateLastActivity() {
+    this.lastActivity = Date.now();
+  }
+
+  /**
+   * ゲームの経過時間を取得（分）
+   * @returns {number} 経過時間（分）
+   */
+  getElapsedMinutes() {
+    return Math.floor((Date.now() - this.createdAt) / (1000 * 60));
+  }
+}
+
+module.exports = Game;

@@ -1,0 +1,17 @@
+{
+  "name": "simplified-mahjong",
+  "version": "1.0.0",
+  "description": "A simplified 5-tile mahjong game for 2 players",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": ["mahjong", "game", "websocket"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2"
+  }
+}

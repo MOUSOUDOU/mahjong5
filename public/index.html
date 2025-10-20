@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>５枚麻雀</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>５枚麻雀</h1>
+        </header>
+        
+        <main id="game-area">
+            <div class="waiting-screen">
+                <h2>ゲーム待機中...</h2>
+                <p>他のプレイヤーの接続を待っています</p>
+            </div>
+            
+            <div class="game-screen" style="display: none;">
+                <!-- 相手プレイヤー情報 -->
+                <div class="opponent-area">
+                    <div class="player-info">
+                        <span class="player-name">相手プレイヤー: <span id="opponent-name">待機中</span></span>
+                        <span class="riichi-status" id="opponent-riichi" style="display: none;">リーチ</span>
+                    </div>
+                    <div class="opponent-hand" id="opponent-hand">
+                        <div class="tile hidden">?</div>
+                        <div class="tile hidden">?</div>
+                        <div class="tile hidden">?</div>
+                        <div class="tile hidden">?</div>
+                    </div>
+                </div>
+
+                <!-- 捨て牌エリア -->
+                <div class="discard-area">
+                    <h3>捨て牌</h3>
+                    <div class="discarded-tiles" id="discarded-tiles">
+                        <!-- 捨て牌がここに表示される -->
+                    </div>
+                </div>
+
+                <!-- ゲーム情報 -->
+                <div class="game-info">
+                    <div class="info-item">
+                        <span>残り牌数: <span id="remaining-tiles">40</span>枚</span>
+                    </div>
+                    <div class="info-item">
+                        <span>現在の手番: <span id="current-turn">あなた</span></span>
+                    </div>
+                </div>
+
+                <!-- プレイヤーエリア -->
+                <div class="player-area">
+                    <div class="player-info">
+                        <span class="player-name">あなた: <span id="player-name">プレイヤー</span></span>
+                        <span class="riichi-status" id="player-riichi" style="display: none;">リーチ</span>
+                    </div>
+                    <div class="player-hand" id="player-hand">
+                        <!-- プレイヤーの手牌がここに表示される -->
+                    </div>
+                </div>
+
+                <!-- アクションボタン -->
+                <div class="action-buttons">
+                    <button id="draw-btn" class="action-btn primary">牌を引く</button>
+                    <button id="riichi-btn" class="action-btn secondary" disabled>リーチ</button>
+                    <button id="ron-btn" class="action-btn win" style="display: none;">ロン</button>
+                    <button id="tsumo-btn" class="action-btn win" style="display: none;">ツモ</button>
+                </div>
+
+                <!-- ゲーム終了画面 -->
+                <div class="game-result" id="game-result" style="display: none;">
+                    <div class="result-content">
+                        <h2 id="result-title">ゲーム終了</h2>
+                        <p id="result-message">結果メッセージ</p>
+                        <button id="new-game-btn" class="action-btn primary">新しいゲーム</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
