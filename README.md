@@ -1,3 +1,17 @@
+## リンク
+
+**YOUTUBE**  
+https://www.youtube.com/@mousoudou
+
+**YOUTUBE 再生リスト ５枚麻雀ゲームを作ろう**  
+https://www.youtube.com/playlist?list=PLWFAmRjzasxUhimkKBzjL-W6Z07hq9tNS
+
+**X(twitter)**  
+twitter.com/MOUSOUDOU_com
+
+**HOMEPAGE**  
+mousoudou.com
+
 # ５枚麻雀ゲーム
 
 ２人用の簡易５枚麻雀ゲームです。通常の麻雀を大幅に簡略化し、手牌４枚から１枚引いて１枚捨て、５枚で完成形を目指すゲームです。
