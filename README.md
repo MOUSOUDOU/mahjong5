@@ -7,10 +7,10 @@ https://www.youtube.com/@mousoudou
 https://www.youtube.com/playlist?list=PLWFAmRjzasxUhimkKBzjL-W6Z07hq9tNS
 
 **X(twitter)**  
-twitter.com/MOUSOUDOU_com
+https://x.com/MOUSOUDOU_com
 
 **HOMEPAGE**  
-mousoudou.com
+https://mousoudou.com
 
 # ５枚麻雀ゲーム
 
