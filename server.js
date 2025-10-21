@@ -952,7 +952,7 @@ io.on('connection', (socket) => {
 });
 
 // 定期的なクリーンアップ処理
-setInterval(() => {
+const cleanupInterval = setInterval(() => {
   try {
     gameEngine.cleanupInactiveGames();
     ErrorHandler.log('info', '非アクティブゲームのクリーンアップ実行', {
@@ -985,21 +985,48 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // プロセス終了時のクリーンアップ
-process.on('SIGTERM', () => {
-  ErrorHandler.log('info', 'SIGTERMを受信しました。サーバーを終了します。');
-  server.close(() => {
-    ErrorHandler.log('info', 'サーバーが正常に終了しました。');
-    process.exit(0);
-  });
-});
+let isShuttingDown = false;
 
-process.on('SIGINT', () => {
-  ErrorHandler.log('info', 'SIGINTを受信しました。サーバーを終了します。');
-  server.close(() => {
-    ErrorHandler.log('info', 'サーバーが正常に終了しました。');
-    process.exit(0);
+function gracefulShutdown(signal) {
+  if (isShuttingDown) {
+    console.log('既にシャットダウン処理中です...');
+    return;
+  }
+  
+  isShuttingDown = true;
+  console.log(`${signal}を受信しました。サーバーを終了します...`);
+  ErrorHandler.log('info', `${signal}を受信しました。サーバーを終了します。`);
+  
+  // クリーンアップ処理のintervalを停止
+  clearInterval(cleanupInterval);
+  
+  // タイムアウトを設定（5秒後に強制終了）
+  const forceExitTimeout = setTimeout(() => {
+    console.error('強制終了します');
+    process.exit(1);
+  }, 5000);
+  
+  // サーバーを閉じる
+  server.close((err) => {
+    clearTimeout(forceExitTimeout);
+    
+    if (err) {
+      console.error('サーバー終了時にエラーが発生しました:', err);
+      ErrorHandler.log('error', 'サーバー終了時にエラー', { error: err.message });
+      process.exit(1);
+    } else {
+      console.log('サーバーが正常に終了しました。');
+      ErrorHandler.log('info', 'サーバーが正常に終了しました。');
+      process.exit(0);
+    }
   });
-});
+  
+  // 新しい接続を拒否
+  server.closeAllConnections?.();
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 server.listen(PORT, () => {
   ErrorHandler.log('info', 'サーバーが起動しました', { port: PORT });
