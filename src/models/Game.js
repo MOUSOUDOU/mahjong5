@@ -76,39 +76,60 @@ class Game {
    * 要件1.1, 1.3に対応：各プレイヤーに4枚配り、ランダムに先手を決定
    */
   startGame() {
+    console.log('ゲーム開始処理開始 - ゲームID:', this.gameId);
+    
     if (this.players.length !== 2) {
       throw new Error('ゲームを開始するには2人のプレイヤーが必要です');
     }
 
+    console.log('プレイヤー数確認OK:', this.players.length);
+
     // プレイヤーの状態をリセット
     this.players.forEach(player => player.reset());
+    console.log('プレイヤー状態リセット完了');
     
     // デッキをリセット
     this.deck.reset();
+    console.log('デッキリセット完了 - 牌数:', this.deck.getRemainingCount());
     
     // 各プレイヤーに4枚ずつ配る（要件1.1）
     this.dealInitialTiles();
     
     // ランダムに先手プレイヤーを決定（要件1.3）
     this.currentPlayerIndex = Math.floor(Math.random() * 2);
+    console.log('先手プレイヤー決定:', this.currentPlayerIndex);
     
     // ゲーム状態を「プレイ中」に変更
     this.gameState = 'playing';
     this.winner = null;
+    
+    console.log('ゲーム開始処理完了');
   }
 
   /**
    * 初期牌配り - 各プレイヤーに4枚ずつ配る
    */
   dealInitialTiles() {
+    console.log('初期牌配り開始 - プレイヤー数:', this.players.length);
+    console.log('デッキの牌数:', this.deck.getRemainingCount());
+    
     for (let i = 0; i < 4; i++) {
       for (const player of this.players) {
         const tile = this.deck.drawTile();
         if (tile) {
           player.addTileToHand(tile);
+          console.log(`プレイヤー ${player.id} に牌 ${tile.id} を配布 (${i+1}枚目)`);
+        } else {
+          console.error('牌を引けませんでした - デッキが空です');
         }
       }
     }
+    
+    // 配布後の手牌数を確認
+    this.players.forEach(player => {
+      console.log(`プレイヤー ${player.id} の手牌数: ${player.getHandSize()}`);
+      console.log(`プレイヤー ${player.id} の手牌: ${player.hand.map(t => t.id).join(', ')}`);
+    });
   }
 
   /**

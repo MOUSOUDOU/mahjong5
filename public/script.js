@@ -285,25 +285,43 @@ function showWaitingScreen() {
 }
 
 function updateGameDisplay(gameState) {
+    console.log('ゲーム状態更新:', gameState);
+    
     const previousGameState = currentGameState;
     currentGameState = gameState;
+    
+    // プレイヤーIDを設定（初回のみ）
+    if (!playerId && gameState.players && gameState.players.length > 0) {
+        // Socket IDと一致するプレイヤーを探す
+        const socketId = socket.id;
+        const matchingPlayer = gameState.players.find(p => p.id === socketId);
+        if (matchingPlayer) {
+            playerId = socketId;
+            console.log('プレイヤーID設定:', playerId);
+        }
+    }
     
     // プレイヤー情報の更新
     const player = gameState.players.find(p => p.id === playerId);
     const opponent = gameState.players.find(p => p.id !== playerId);
+    
+    console.log('現在のプレイヤー:', player);
+    console.log('プレイヤー手牌データ:', gameState.playerHandTiles);
     
     if (player) {
         updatePlayerStatus(player, false);
         
         // 手牌の表示（自分の手番で手牌が5枚の時のみクリック可能）
         const isPlayerTurn = gameState.currentPlayerIndex === gameState.players.indexOf(player);
-        const canDiscardTile = isPlayerTurn && player.hand.length === 5;
-        displayPlayerHand(player.hand, canDiscardTile);
+        const playerHand = gameState.playerHandTiles || []; // 正しい手牌データを使用
+        console.log('表示する手牌:', playerHand);
+        const canDiscardTile = isPlayerTurn && playerHand.length === 5;
+        displayPlayerHand(playerHand, canDiscardTile);
     }
     
     if (opponent) {
         updatePlayerStatus(opponent, true);
-        displayOpponentHand(opponent.hand.length);
+        displayOpponentHand(opponent.handSize); // 使用 handSize プロパティ
     }
     
     // 捨て牌の表示
@@ -314,7 +332,7 @@ function updateGameDisplay(gameState) {
     displayDiscardedTiles(allDiscardedTiles);
     
     // ゲーム情報の更新
-    updateRemainingTiles(gameState.deck.length);
+    updateRemainingTiles(gameState.remainingTiles);
     updateTurnIndicator(gameState);
     
     // 手番が変わった場合のアニメーション
@@ -339,11 +357,13 @@ function updateButtonStates(gameState, isMyTurn) {
     
     if (!player) return;
     
+    const playerHand = gameState.playerHandTiles || []; // 正しい手牌データを使用
+    
     // 牌を引くボタン
-    drawBtn.disabled = !isMyTurn || player.hand.length >= 5;
+    drawBtn.disabled = !isMyTurn || playerHand.length >= 5;
     
     // リーチボタン（テンパイ状態で有効化 - 実際の判定は後で実装）
-    riichiBtn.disabled = !isMyTurn || player.isRiichi || player.hand.length !== 4;
+    riichiBtn.disabled = !isMyTurn || player.isRiichi || playerHand.length !== 4;
     
     // ロン・ツモボタンは後で実装
     ronBtn.style.display = 'none';
@@ -378,8 +398,9 @@ function discardSelectedTile() {
     if (selectedTile && currentGameState) {
         const player = currentGameState.players.find(p => p.id === playerId);
         const isPlayerTurn = currentGameState.currentPlayerIndex === currentGameState.players.indexOf(player);
+        const playerHand = currentGameState.playerHandTiles || []; // 正しい手牌データを使用
         
-        if (isPlayerTurn && player.hand.length === 5) {
+        if (isPlayerTurn && playerHand.length === 5) {
             if (safeEmit('discardTile', { tileId: selectedTile.id })) {
                 selectedTile = null;
                 
