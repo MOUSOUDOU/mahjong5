@@ -1,3 +1,23 @@
 {
-    "kiroAgent.configureMCP": "Disabled"
+    "kiroAgent.configureMCP": "Disabled",
+    "locale": "ja",
+    "editor.fontFamily": "PlemolJP, 'BIZ UDゴシック', 'BIZ UDPGothic', 'Yu Gothic UI', 'Meiryo UI', monospace",
+    "terminal.integrated.fontFamily": "'BIZ UDPGothic', 'Yu Gothic UI', 'Meiryo UI', monospace",
+    "workbench.colorTheme": "Default Dark+",
+    "files.autoGuessEncoding": true,
+    "files.encoding": "utf8",
+    "terminal.integrated.profiles.windows": {
+        "SSH Connection": {
+            "path": "ssh",
+            "args": [
+                "-i",
+                "C:/Users/react/.ssh/id_rsa_mahjong5",
+                "react@192.168.11.12",
+                "-t",
+                "cd /home/react/251008_Kiro_Mahjong5/ && exec bash"
+            ],
+            "icon": "server"
+        }
+    },
+    "terminal.integrated.defaultProfile.windows": "SSH Connection"
 }
