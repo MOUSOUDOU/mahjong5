@@ -7,8 +7,8 @@
 
 body {
     font-family: 'Arial', sans-serif;
-    background-color: #2d5a27;
-    color: #fff;
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    color: #333;
     min-height: 100vh;
 }
 
@@ -25,29 +25,31 @@ header {
 
 header h1 {
     font-size: 2.5rem;
-    color: #ffd700;
-    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+    color: #2c3e50;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
 }
 
 /* 待機画面 */
 .waiting-screen {
     text-align: center;
     padding: 50px;
-    background-color: rgba(0,0,0,0.3);
-    border-radius: 10px;
+    background-color: rgba(255,255,255,0.9);
+    border-radius: 15px;
     margin: 50px auto;
     max-width: 500px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    border: 2px solid #e3f2fd;
 }
 
 .waiting-screen h2 {
     font-size: 1.8rem;
     margin-bottom: 20px;
-    color: #ffd700;
+    color: #1976d2;
 }
 
 .waiting-screen p {
     font-size: 1.2rem;
-    opacity: 0.8;
+    color: #666;
 }
 
 /* ゲーム画面 */
@@ -61,8 +63,10 @@ header h1 {
 .opponent-area, .player-area {
     margin: 20px 0;
     padding: 15px;
-    background-color: rgba(0,0,0,0.2);
-    border-radius: 8px;
+    background-color: rgba(255,255,255,0.8);
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    border: 1px solid #e0e0e0;
 }
 
 .player-info {
@@ -78,12 +82,13 @@ header h1 {
 }
 
 .riichi-status {
-    background-color: #ff4444;
+    background-color: #ff5722;
     color: white;
     padding: 4px 12px;
     border-radius: 15px;
     font-size: 0.9rem;
     font-weight: bold;
+    box-shadow: 0 2px 8px rgba(255,87,34,0.3);
 }
 
 /* 手牌表示 */
@@ -97,9 +102,9 @@ header h1 {
 .tile {
     width: 50px;
     height: 70px;
-    background-color: #f5f5dc;
-    border: 2px solid #8b4513;
-    border-radius: 6px;
+    background: linear-gradient(145deg, #ffffff, #f0f0f0);
+    border: 2px solid #ddd;
+    border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -109,16 +114,18 @@ header h1 {
     cursor: pointer;
     transition: all 0.2s ease;
     user-select: none;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
 .tile:hover {
     transform: translateY(-5px);
-    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+    background: linear-gradient(145deg, #f8f9fa, #e9ecef);
 }
 
 .tile.hidden {
-    background-color: #4a4a4a;
-    color: #888;
+    background: linear-gradient(145deg, #e0e0e0, #bdbdbd);
+    color: #666;
     cursor: default;
 }
 
@@ -128,23 +135,24 @@ header h1 {
 }
 
 .tile.selected {
-    background-color: #ffd700;
-    border-color: #ff8c00;
+    background: linear-gradient(145deg, #fff3e0, #ffcc02);
+    border-color: #ff9800;
     transform: translateY(-8px);
+    box-shadow: 0 10px 30px rgba(255,152,0,0.3);
 }
 
 .tile.clickable {
-    border-color: #00ff00;
-    box-shadow: 0 0 10px rgba(0,255,0,0.3);
+    border-color: #4caf50;
+    box-shadow: 0 0 15px rgba(76,175,80,0.4);
 }
 
 /* 牌の種類別スタイル */
 .tile.bamboo {
-    color: #228b22;
+    color: #2e7d32;
 }
 
 .tile.honor {
-    color: #dc143c;
+    color: #d32f2f;
     font-weight: 900;
 }
 
@@ -152,13 +160,15 @@ header h1 {
 .discard-area {
     margin: 30px 0;
     padding: 20px;
-    background-color: rgba(0,0,0,0.3);
-    border-radius: 8px;
+    background-color: rgba(255,255,255,0.7);
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    border: 1px solid #e0e0e0;
 }
 
 .discard-area h3 {
     margin-bottom: 15px;
-    color: #ffd700;
+    color: #1976d2;
     text-align: center;
 }
 
@@ -169,8 +179,9 @@ header h1 {
     justify-content: center;
     min-height: 80px;
     padding: 10px;
-    border: 2px dashed rgba(255,255,255,0.3);
-    border-radius: 6px;
+    border: 2px dashed rgba(25,118,210,0.3);
+    border-radius: 8px;
+    background-color: rgba(227,242,253,0.3);
 }
 
 .discarded-tiles .tile {
@@ -192,17 +203,20 @@ header h1 {
     justify-content: space-around;
     margin: 20px 0;
     padding: 15px;
-    background-color: rgba(0,0,0,0.4);
-    border-radius: 8px;
+    background-color: rgba(255,255,255,0.9);
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    border: 1px solid #e0e0e0;
 }
 
 .info-item {
     text-align: center;
     font-size: 1.1rem;
+    color: #333;
 }
 
 .info-item span {
-    color: #ffd700;
+    color: #1976d2;
     font-weight: bold;
 }
 
@@ -275,7 +289,7 @@ header h1 {
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0,0,0,0.8);
+    background-color: rgba(0,0,0,0.6);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -283,17 +297,18 @@ header h1 {
 }
 
 .result-content {
-    background-color: #2d5a27;
+    background: linear-gradient(145deg, #ffffff, #f5f5f5);
     padding: 40px;
-    border-radius: 15px;
+    border-radius: 20px;
     text-align: center;
-    border: 3px solid #ffd700;
+    border: 3px solid #1976d2;
     max-width: 400px;
     width: 90%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
 }
 
 .result-content h2 {
-    color: #ffd700;
+    color: #1976d2;
     font-size: 2rem;
     margin-bottom: 20px;
 }
@@ -302,6 +317,7 @@ header h1 {
     font-size: 1.2rem;
     margin-bottom: 30px;
     line-height: 1.5;
+    color: #333;
 }
 
 /* レスポンシブデザイン */
