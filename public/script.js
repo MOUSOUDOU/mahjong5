@@ -26,7 +26,7 @@ socket.on('connect', () => {
     console.log('サーバーに接続しました');
     isConnected = true;
     updateConnectionStatus(true);
-    
+
     // 接続時にゲーム参加をリクエスト
     socket.emit('joinGame');
 });
@@ -101,26 +101,26 @@ socket.on('gameWon', (data) => {
 // ゲーム開始通知を受信
 socket.on('gameStarted', (gameData) => {
     console.log('ゲームが開始されました:', gameData);
-    
+
     // ゲーム情報を保存
     if (gameData.gameId) {
         localStorage.setItem('currentGameId', gameData.gameId);
     }
-    
+
     showGameScreen();
-    
+
     // ゲーム状態の更新は別途 gameStateUpdate で受信される
 });
 
 // ゲーム終了通知を受信
 socket.on('gameEnded', (result) => {
     console.log('ゲームが終了しました:', result);
-    
+
     // 最終ゲーム状態を更新
     if (result.finalState) {
         updateGameDisplay(result.finalState);
     }
-    
+
     // 結果画面を表示
     setTimeout(() => {
         showGameResult(result);
@@ -131,10 +131,10 @@ socket.on('gameEnded', (result) => {
 socket.on('playerDisconnected', (data) => {
     console.log('プレイヤーが切断されました:', data);
     showError(data.message, 5000);
-    
+
     // タイマーをクリア
     clearTurnTimer();
-    
+
     // ゲーム画面をリセット
     setTimeout(() => {
         showWaitingScreen();
@@ -163,7 +163,7 @@ socket.on('autoDrawTimeout', (data) => {
 socket.on('reconnectionSuccess', (data) => {
     console.log('再接続成功:', data);
     showMessage(data.message, 3000);
-    
+
     // ゲーム状態を復元
     if (data.gameState) {
         updateGameDisplay(data.gameState);
@@ -186,36 +186,36 @@ socket.on('playerReconnected', (data) => {
 function createTileElement(tile, isClickable = false, isHidden = false) {
     const tileElement = document.createElement('div');
     tileElement.className = 'tile';
-    
+
     if (isHidden) {
         tileElement.classList.add('hidden');
         tileElement.textContent = '?';
     } else {
         // 牌の表示テキストを設定
         tileElement.textContent = getTileDisplayText(tile);
-        
+
         // 牌の種類に応じてクラスを追加
         if (tile.suit === 'bamboo') {
             tileElement.classList.add('bamboo');
         } else if (tile.suit === 'honor') {
             tileElement.classList.add('honor');
         }
-        
+
         // データ属性を設定
         tileElement.dataset.tileId = tile.id;
         tileElement.dataset.suit = tile.suit;
         tileElement.dataset.value = tile.value;
     }
-    
+
     if (isClickable) {
         tileElement.classList.add('clickable');
         tileElement.addEventListener('click', () => handleTileClick(tile, tileElement));
         tileElement.addEventListener('dblclick', () => handleTileDoubleClick(tile, tileElement));
-        
+
         // ダブルクリック時の視覚的フィードバック用のタイトル属性
         tileElement.title = `${getTileDisplayText(tile)} - クリック: 選択, ダブルクリック: 捨てる`;
     }
-    
+
     return tileElement;
 }
 
@@ -241,11 +241,18 @@ function handleTileClick(tile, tileElement) {
             previousSelected.classList.remove('selected');
         }
     }
-    
+
     // 新しい牌を選択
     selectedTile = tile;
     tileElement.classList.add('selected');
-    
+
+    // 牌選択時にボタン状態を更新（リーチボタンの有効/無効を再判定）
+    if (currentGameState) {
+        const player = currentGameState.players.find(p => p.id === playerId);
+        const isMyTurn = currentGameState.currentPlayerIndex === currentGameState.players.indexOf(player);
+        updateButtonStates(currentGameState, isMyTurn);
+    }
+
     // 捨て牌ボタンの状態を更新（実際の捨て牌処理は後で実装）
     console.log('選択された牌:', tile);
 }
@@ -253,7 +260,7 @@ function handleTileClick(tile, tileElement) {
 function handleTileDoubleClick(tile, tileElement) {
     // ダブルクリック時は即座に捨て牌処理を実行
     console.log('ダブルクリックで捨て牌:', tile);
-    
+
     // まず牌を選択状態にする
     if (selectedTile) {
         const previousSelected = document.querySelector('.tile.selected');
@@ -261,18 +268,36 @@ function handleTileDoubleClick(tile, tileElement) {
             previousSelected.classList.remove('selected');
         }
     }
-    
+
     selectedTile = tile;
     tileElement.classList.add('selected');
-    
+
     // 視覚的フィードバック（短時間のハイライト）
     tileElement.classList.add('double-clicked');
-    
+
     // 少し遅延してから捨て牌処理を実行（視覚的フィードバックのため）
     setTimeout(() => {
         discardSelectedTile();
         tileElement.classList.remove('double-clicked');
     }, 150);
+}
+
+// 牌の選択を解除する関数
+function clearTileSelection() {
+    if (selectedTile) {
+        const previousSelected = document.querySelector('.tile.selected');
+        if (previousSelected) {
+            previousSelected.classList.remove('selected');
+        }
+        selectedTile = null;
+
+        // 選択解除時にボタン状態を更新
+        if (currentGameState) {
+            const player = currentGameState.players.find(p => p.id === playerId);
+            const isMyTurn = currentGameState.currentPlayerIndex === currentGameState.players.indexOf(player);
+            updateButtonStates(currentGameState, isMyTurn);
+        }
+    }
 }
 
 // 手牌の表示順序をソートする関数
@@ -281,20 +306,20 @@ function sortTilesForDisplay(tiles) {
         console.warn('sortTilesForDisplay: 無効な牌データ', tiles);
         return [];
     }
-    
+
     // 空の配列や無効な牌データをフィルタリング
-    const validTiles = tiles.filter(tile => 
-        tile && 
-        typeof tile === 'object' && 
-        tile.suit && 
-        tile.value !== undefined && 
+    const validTiles = tiles.filter(tile =>
+        tile &&
+        typeof tile === 'object' &&
+        tile.suit &&
+        tile.value !== undefined &&
         tile.value !== null
     );
-    
+
     if (validTiles.length === 0) {
         return [];
     }
-    
+
     return [...validTiles].sort((a, b) => {
         // 牌の種類による優先順位を決定
         const getSuitPriority = (tile) => {
@@ -302,7 +327,7 @@ function sortTilesForDisplay(tiles) {
             if (tile.suit === 'honor') return 2;  // 字牌が次
             return 3; // その他（unknown等）は最後
         };
-        
+
         // 字牌の値による優先順位を決定
         const getHonorPriority = (value) => {
             switch (value) {
@@ -312,15 +337,15 @@ function sortTilesForDisplay(tiles) {
                 default: return 4;      // その他
             }
         };
-        
+
         const suitPriorityA = getSuitPriority(a);
         const suitPriorityB = getSuitPriority(b);
-        
+
         // まず牌の種類でソート
         if (suitPriorityA !== suitPriorityB) {
             return suitPriorityA - suitPriorityB;
         }
-        
+
         // 同じ種類の牌の場合、値でソート
         if (a.suit === 'bamboo' && b.suit === 'bamboo') {
             // 索子は数値順（1-9）
@@ -328,14 +353,14 @@ function sortTilesForDisplay(tiles) {
             const valueB = parseInt(b.value) || 0;
             return valueA - valueB;
         }
-        
+
         if (a.suit === 'honor' && b.suit === 'honor') {
             // 字牌は白→發→中の順
             const priorityA = getHonorPriority(a.value);
             const priorityB = getHonorPriority(b.value);
             return priorityA - priorityB;
         }
-        
+
         // その他の場合は元の順序を保持
         return 0;
     });
@@ -344,7 +369,7 @@ function sortTilesForDisplay(tiles) {
 // テスト用：牌ソート機能の検証
 function testTileSorting() {
     console.log('=== 牌ソート機能テスト開始 ===');
-    
+
     // テスト用の牌データを作成（意図的にランダムな順序）
     const testTiles = [
         { id: 'test-1', suit: 'honor', value: 'red' },     // 中
@@ -355,19 +380,19 @@ function testTileSorting() {
         { id: 'test-6', suit: 'bamboo', value: 9 },        // 9
         { id: 'test-7', suit: 'bamboo', value: 3 },        // 3
     ];
-    
+
     console.log('ソート前:', testTiles.map(t => getTileDisplayText(t)));
-    
+
     const sortedTiles = sortTilesForDisplay(testTiles);
-    
+
     console.log('ソート後:', sortedTiles.map(t => getTileDisplayText(t)));
-    
+
     // 期待される順序: 1, 3, 5, 9, 白, 發, 中
     const expectedOrder = ['1', '3', '5', '9', '白', '發', '中'];
     const actualOrder = sortedTiles.map(t => getTileDisplayText(t));
-    
+
     const isCorrect = JSON.stringify(expectedOrder) === JSON.stringify(actualOrder);
-    
+
     if (isCorrect) {
         console.log('✓ 牌ソート機能が正常に動作しています');
     } else {
@@ -375,9 +400,9 @@ function testTileSorting() {
         console.log('期待値:', expectedOrder);
         console.log('実際値:', actualOrder);
     }
-    
+
     console.log('=== 牌ソート機能テスト完了 ===');
-    
+
     return isCorrect;
 }
 
@@ -387,26 +412,26 @@ window.testTileSorting = testTileSorting;
 // 手牌表示機能のテスト
 function testHandDisplay() {
     console.log('=== 手牌表示機能テスト開始 ===');
-    
+
     const testHand4 = [
         { id: 'test-1', suit: 'honor', value: 'red' },
         { id: 'test-2', suit: 'bamboo', value: 5 },
         { id: 'test-3', suit: 'honor', value: 'white' },
         { id: 'test-4', suit: 'bamboo', value: 1 }
     ];
-    
+
     const testHand5 = [
         ...testHand4,
         { id: 'test-5', suit: 'bamboo', value: 9 }
     ];
-    
+
     console.log('4枚手牌テスト:');
     console.log('入力:', testHand4.map(t => getTileDisplayText(t)));
-    
+
     console.log('5枚手牌テスト（引いた牌あり）:');
     console.log('入力:', testHand5.map(t => getTileDisplayText(t)));
     console.log('引いた牌:', getTileDisplayText(testHand5[4]));
-    
+
     // 重複牌テスト
     console.log('\n重複牌テスト:');
     const duplicateHand = [
@@ -417,12 +442,12 @@ function testHandDisplay() {
     ];
     const drawnDuplicate = { id: 'dup-5', suit: 'bamboo', value: 5 }; // 既存の5と同じ
     const handWithDuplicate = [...duplicateHand, drawnDuplicate];
-    
+
     console.log('基本手牌:', duplicateHand.map(t => getTileDisplayText(t)));
     console.log('引いた牌:', getTileDisplayText(drawnDuplicate), '(既存の牌と重複)');
     console.log('全手牌:', handWithDuplicate.map(t => getTileDisplayText(t)));
     console.log('期待結果: ソート済み4枚 + 区切り + 引いた牌');
-    
+
     console.log('=== 手牌表示機能テスト完了 ===');
     console.log('詳細なテストは hand-display-test.html で確認できます');
 }
@@ -445,18 +470,164 @@ function testDoubleClickFeature() {
 
 window.testDoubleClickFeature = testDoubleClickFeature;
 
+// テンパイ判定関数（選択した牌を捨てた後の4枚がテンパイかチェック）
+function checkTenpaiAfterDiscard(hand, tileToDiscard) {
+    if (!hand || !tileToDiscard || hand.length !== 5) {
+        return false;
+    }
+
+    // 選択した牌を除いた4枚を取得
+    const remainingTiles = hand.filter(tile => tile.id !== tileToDiscard.id);
+
+    if (remainingTiles.length !== 4) {
+        return false;
+    }
+
+    // 簡易テンパイ判定（5枚麻雀用）
+    // 実際のゲームでは、残り4枚 + 任意の1枚で上がりになるかをチェック
+    return checkIsTenpai(remainingTiles);
+}
+
+// 4枚の手牌がテンパイ状態かチェック（簡易実装）
+function checkIsTenpai(tiles) {
+    if (!tiles || tiles.length !== 4) {
+        return false;
+    }
+
+    // 5枚麻雀の簡易テンパイ判定
+    // 実際のルールに応じて実装する必要がありますが、
+    // ここでは基本的なパターンをチェック
+
+    // 牌を種類別に分類
+    const bambooTiles = tiles.filter(t => t.suit === 'bamboo').map(t => parseInt(t.value)).sort((a, b) => a - b);
+    const honorTiles = tiles.filter(t => t.suit === 'honor');
+
+    // パターン1: 4枚すべて同じ牌（カンの形 - 実際には不可能だが念のため）
+    const allSame = tiles.every(tile =>
+        tile.suit === tiles[0].suit && tile.value === tiles[0].value
+    );
+    if (allSame) return true;
+
+    // パターン2: 3枚 + 1枚のペア形
+    const tileGroups = groupTilesByValue(tiles);
+    const groupSizes = Object.values(tileGroups).map(group => group.length).sort((a, b) => b - a);
+
+    // 3枚 + 1枚の組み合わせ
+    if (groupSizes.length === 2 && groupSizes[0] === 3 && groupSizes[1] === 1) {
+        return true;
+    }
+
+    // パターン3: 2枚 + 2枚のペア形
+    if (groupSizes.length === 2 && groupSizes[0] === 2 && groupSizes[1] === 2) {
+        return true;
+    }
+
+    // パターン4: 連続する数牌の組み合わせ（順子の一部）
+    if (bambooTiles.length >= 3) {
+        // 連続する3枚があるかチェック
+        for (let i = 0; i <= bambooTiles.length - 3; i++) {
+            if (bambooTiles[i + 1] === bambooTiles[i] + 1 &&
+                bambooTiles[i + 2] === bambooTiles[i] + 2) {
+                return true;
+            }
+        }
+
+        // 2枚連続 + 他の組み合わせ
+        for (let i = 0; i <= bambooTiles.length - 2; i++) {
+            if (bambooTiles[i + 1] === bambooTiles[i] + 1) {
+                return true; // 簡易判定として連続2枚があればテンパイとする
+            }
+        }
+    }
+
+    // 暫定的にfalseを返す（実際のルールに応じて調整が必要）
+    return false;
+}
+
+// 牌を値でグループ化するヘルパー関数
+function groupTilesByValue(tiles) {
+    const groups = {};
+
+    tiles.forEach(tile => {
+        const key = `${tile.suit}-${tile.value}`;
+        if (!groups[key]) {
+            groups[key] = [];
+        }
+        groups[key].push(tile);
+    });
+
+    return groups;
+}
+
+// テンパイ判定のテスト関数
+function testTenpaiCheck() {
+    console.log('=== テンパイ判定テスト ===');
+
+    // テストケース1: 3枚 + 1枚
+    const test1 = [
+        { id: 't1-1', suit: 'bamboo', value: 5 },
+        { id: 't1-2', suit: 'bamboo', value: 5 },
+        { id: 't1-3', suit: 'bamboo', value: 5 },
+        { id: 't1-4', suit: 'honor', value: 'white' }
+    ];
+
+    // テストケース2: 2枚 + 2枚
+    const test2 = [
+        { id: 't2-1', suit: 'bamboo', value: 3 },
+        { id: 't2-2', suit: 'bamboo', value: 3 },
+        { id: 't2-3', suit: 'honor', value: 'red' },
+        { id: 't2-4', suit: 'honor', value: 'red' }
+    ];
+
+    // テストケース3: 連続数牌
+    const test3 = [
+        { id: 't3-1', suit: 'bamboo', value: 1 },
+        { id: 't3-2', suit: 'bamboo', value: 2 },
+        { id: 't3-3', suit: 'bamboo', value: 3 },
+        { id: 't3-4', suit: 'honor', value: 'white' }
+    ];
+
+    console.log('テスト1 (3枚+1枚):', checkIsTenpai(test1) ? '✓ テンパイ' : '✗ 非テンパイ');
+    console.log('テスト2 (2枚+2枚):', checkIsTenpai(test2) ? '✓ テンパイ' : '✗ 非テンパイ');
+    console.log('テスト3 (連続数牌):', checkIsTenpai(test3) ? '✓ テンパイ' : '✗ 非テンパイ');
+
+    console.log('=== テスト完了 ===');
+    console.log('注意: 実際のゲームルールに応じて判定ロジックの調整が必要です');
+}
+
+window.testTenpaiCheck = testTenpaiCheck;
+
+// リーチボタンロジックのテスト関数
+function testRiichiButtonLogic() {
+    console.log('=== リーチボタンロジックテスト ===');
+    console.log('修正された条件:');
+    console.log('1. 自分の手番');
+    console.log('2. まだリーチしていない');
+    console.log('3. 手牌が5枚（牌を引いた状態）');
+    console.log('4. 牌が選択されている');
+    console.log('5. 選択した牌を捨てた後の4枚がテンパイ状態');
+    console.log('');
+    console.log('修正前の問題: 牌を引くタイミングでリーチボタンが有効になっていた');
+    console.log('修正後: 上記5つの条件をすべて満たす場合のみ有効');
+    console.log('');
+    console.log('視覚的フィードバック: リーチ可能時にボタンが光る');
+    console.log('=== テスト完了 ===');
+}
+
+window.testRiichiButtonLogic = testRiichiButtonLogic;
+
 function displayPlayerHand(tiles, isClickable = false, drawnTile = null) {
     playerHand.innerHTML = '';
-    
+
     if (!Array.isArray(tiles)) {
         console.warn('displayPlayerHand: 無効な手牌データ', tiles);
         return;
     }
-    
+
     // 引いた牌がある場合は、それを除いて残りの牌をソート
     let handTiles = [...tiles];
     let separateDrawnTile = null;
-    
+
     if (drawnTile) {
         // 引いた牌を手牌から除外（IDで特定の1枚のみを除外）
         // 重複牌対応: 同じ値の牌が複数ある場合でも、IDで特定の1枚だけを除外
@@ -474,16 +645,16 @@ function displayPlayerHand(tiles, isClickable = false, drawnTile = null) {
         separateDrawnTile = tiles[tiles.length - 1];
         handTiles = tiles.slice(0, -1);
     }
-    
+
     // 基本手牌（4枚）をソートして表示
     const sortedTiles = sortTilesForDisplay(handTiles);
-    
+
     sortedTiles.forEach(tile => {
         const tileElement = createTileElement(tile, isClickable);
         tileElement.classList.add('sorted-tile');
         playerHand.appendChild(tileElement);
     });
-    
+
     // 引いた牌がある場合は右端に表示（ソートしない）
     if (separateDrawnTile) {
         // 区切り線を追加
@@ -491,7 +662,7 @@ function displayPlayerHand(tiles, isClickable = false, drawnTile = null) {
         separator.className = 'tile-separator';
         separator.setAttribute('aria-hidden', 'true');
         playerHand.appendChild(separator);
-        
+
         // 引いた牌を表示
         const drawnTileElement = createTileElement(separateDrawnTile, isClickable);
         drawnTileElement.classList.add('drawn-tile');
@@ -502,7 +673,7 @@ function displayPlayerHand(tiles, isClickable = false, drawnTile = null) {
 
 function displayOpponentHand(tileCount) {
     opponentHand.innerHTML = '';
-    
+
     for (let i = 0; i < tileCount; i++) {
         const tileElement = createTileElement(null, false, true);
         opponentHand.appendChild(tileElement);
@@ -516,62 +687,62 @@ class DiscardDisplayManager {
         this.opponentDiscardArea = null;
         this.init();
     }
-    
+
     init() {
         // 捨て牌エリアの要素を取得
         this.playerDiscardArea = document.getElementById('player-discard-content');
         this.opponentDiscardArea = document.getElementById('opponent-discard-content');
-        
+
         if (!this.playerDiscardArea || !this.opponentDiscardArea) {
             console.error('捨て牌表示エリアが見つかりません');
             return;
         }
-        
+
         console.log('DiscardDisplayManager初期化完了');
     }
-    
+
     // ゲーム状態から捨て牌を更新（要件4.1, 4.2, 4.3, 4.4対応）
     updateDiscards(gameState, currentPlayerId) {
         if (!gameState || !gameState.players) {
             console.warn('無効なゲーム状態です');
             return;
         }
-        
+
         const player = gameState.players.find(p => p.id === currentPlayerId);
         const opponent = gameState.players.find(p => p.id !== currentPlayerId);
-        
+
         if (!player || !opponent) {
             console.warn('プレイヤーまたは相手が見つかりません');
             return;
         }
-        
+
         // 捨て牌データを変換（時系列順序を保持）
         const playerDiscards = this.convertDiscardData(player.discardedTiles || [], 'player');
         const opponentDiscards = this.convertDiscardData(opponent.discardedTiles || [], 'opponent');
-        
+
         console.log('捨て牌表示更新:', {
             playerId: currentPlayerId,
             playerDiscards: playerDiscards.length,
             opponentDiscards: opponentDiscards.length
         });
-        
+
         // プレイヤーの捨て牌を表示（右側、上から下へ）
         this.displayPlayerDiscards(playerDiscards);
-        
+
         // 相手の捨て牌を表示（左側、180度回転、下から上へ）
         this.displayOpponentDiscards(opponentDiscards);
-        
+
         // 表示後の検証
         this.validateDisplayConsistency(playerDiscards, opponentDiscards);
     }
-    
+
     // 捨て牌データの変換（サーバーデータからクライアント表示用データへ）
     convertDiscardData(discardStrings, playerType) {
         if (!Array.isArray(discardStrings)) {
             console.warn(`${playerType}の捨て牌データが配列ではありません:`, discardStrings);
             return [];
         }
-        
+
         return discardStrings.map((tileStr, index) => {
             try {
                 // 文字列から牌情報を解析
@@ -597,7 +768,7 @@ class DiscardDisplayManager {
             }
         });
     }
-    
+
     // 牌の文字列表現から牌情報を解析
     parseTileString(tileStr) {
         // 数字牌（1-9）
@@ -607,7 +778,7 @@ class DiscardDisplayManager {
                 value: parseInt(tileStr)
             };
         }
-        
+
         // 字牌
         switch (tileStr) {
             case '白':
@@ -621,50 +792,50 @@ class DiscardDisplayManager {
                 return { suit: 'unknown', value: tileStr };
         }
     }
-    
+
     // 表示の一貫性を検証
     validateDisplayConsistency(playerDiscards, opponentDiscards) {
         const issues = [];
-        
+
         // プレイヤー側の検証
-        const playerDisplayed = this.playerDiscardArea ? 
+        const playerDisplayed = this.playerDiscardArea ?
             this.playerDiscardArea.querySelectorAll('.discard-tile').length : 0;
         if (playerDisplayed !== playerDiscards.length) {
             issues.push(`プレイヤー捨て牌数不一致: 表示${playerDisplayed} vs データ${playerDiscards.length}`);
         }
-        
+
         // 相手側の検証
-        const opponentDisplayed = this.opponentDiscardArea ? 
+        const opponentDisplayed = this.opponentDiscardArea ?
             this.opponentDiscardArea.querySelectorAll('.discard-tile').length : 0;
         if (opponentDisplayed !== opponentDiscards.length) {
             issues.push(`相手捨て牌数不一致: 表示${opponentDisplayed} vs データ${opponentDiscards.length}`);
         }
-        
+
         // 6牌制限の検証
         const rowLimitIssues = this.validateRowLimits();
         issues.push(...rowLimitIssues);
-        
+
         if (issues.length > 0) {
             console.warn('捨て牌表示の一貫性問題:', issues);
         } else {
             console.log('捨て牌表示の一貫性確認: OK');
         }
-        
+
         return issues;
     }
-    
+
     // プレイヤーの捨て牌を表示（右側、上から下へ）
     displayPlayerDiscards(tiles) {
         if (!this.playerDiscardArea) {
             console.error('プレイヤー捨て牌エリアが見つかりません');
             return;
         }
-        
+
         console.log('プレイヤー捨て牌表示:', tiles.length, '枚');
-        
+
         // エリアをクリア
         this.playerDiscardArea.innerHTML = '';
-        
+
         if (tiles.length === 0) {
             const emptyRow = document.createElement('div');
             emptyRow.className = 'discard-row empty';
@@ -672,37 +843,37 @@ class DiscardDisplayManager {
             this.playerDiscardArea.appendChild(emptyRow);
             return;
         }
-        
+
         // プレイヤー側：上から下への行追加ロジック（時系列順序を保持）
         this.renderPlayerTileRows(tiles);
     }
-    
+
     // プレイヤー側の牌配置ロジック（上から下へ、時系列順序保持）
     renderPlayerTileRows(tiles) {
         // 時系列順序でソート（念のため）
         const sortedTiles = [...tiles].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-        
+
         // 6牌ずつ行に分割
         const rows = this.createTileRows(sortedTiles);
-        
+
         console.log(`プレイヤー側: ${sortedTiles.length}牌を${rows.length}行に配置`);
-        
+
         // 上から下へ順番に行を追加
         rows.forEach((rowTiles, rowIndex) => {
             const row = document.createElement('div');
             row.className = 'discard-row player-row';
             row.dataset.rowIndex = rowIndex;
-            
+
             // アクセシビリティ属性を追加
             row.setAttribute('role', 'listitem');
             row.setAttribute('aria-label', `あなたの捨て牌 第${rowIndex + 1}行目 (${rowTiles.length}牌)`);
-            
+
             // 6牌で満杯の行にマーク
             if (rowTiles.length === 6) {
                 row.classList.add('full');
                 row.setAttribute('aria-describedby', 'full-row-description');
             }
-            
+
             // 左詰めで牌を配置（時系列順序）
             rowTiles.forEach((tile, tileIndex) => {
                 const tileElement = createDiscardTileElement(tile, false);
@@ -711,24 +882,24 @@ class DiscardDisplayManager {
                 tileElement.setAttribute('role', 'listitem');
                 row.appendChild(tileElement);
             });
-            
+
             // 行を上から下へ順番に追加
             this.playerDiscardArea.appendChild(row);
         });
     }
-    
+
     // 相手の捨て牌を表示（左側、180度回転、下から上へ）
     displayOpponentDiscards(tiles) {
         if (!this.opponentDiscardArea) {
             console.error('相手捨て牌エリアが見つかりません');
             return;
         }
-        
+
         console.log('相手捨て牌表示:', tiles.length, '枚');
-        
+
         // エリアをクリア
         this.opponentDiscardArea.innerHTML = '';
-        
+
         if (tiles.length === 0) {
             const emptyRow = document.createElement('div');
             emptyRow.className = 'discard-row empty';
@@ -736,38 +907,38 @@ class DiscardDisplayManager {
             this.opponentDiscardArea.appendChild(emptyRow);
             return;
         }
-        
+
         // 相手側：下から上への行追加ロジック（CSS column-reverseと連携、時系列順序を保持）
         this.renderOpponentTileRows(tiles);
     }
-    
+
     // 相手側の牌配置ロジック（下から上へ、CSS column-reverseと連携、時系列順序保持）
     renderOpponentTileRows(tiles) {
         // 時系列順序でソート（念のため）
         const sortedTiles = [...tiles].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-        
+
         // 6牌ずつ行に分割
         const rows = this.createTileRows(sortedTiles);
-        
+
         console.log(`相手側: ${sortedTiles.length}牌を${rows.length}行に配置（180度回転）`);
-        
+
         // CSS column-reverseと連携して下から上への表示を実現
         // 行は通常順序で追加するが、CSSで表示順序を逆転
         rows.forEach((rowTiles, rowIndex) => {
             const row = document.createElement('div');
             row.className = 'discard-row opponent-row';
             row.dataset.rowIndex = rowIndex;
-            
+
             // アクセシビリティ属性を追加
             row.setAttribute('role', 'listitem');
             row.setAttribute('aria-label', `相手の捨て牌 第${rowIndex + 1}行目 (${rowTiles.length}牌、180度回転表示)`);
-            
+
             // 6牌で満杯の行にマーク
             if (rowTiles.length === 6) {
                 row.classList.add('full');
                 row.setAttribute('aria-describedby', 'full-row-description');
             }
-            
+
             // 左詰めで牌を配置（180度回転、時系列順序）
             rowTiles.forEach((tile, tileIndex) => {
                 const tileElement = createDiscardTileElement(tile, true); // 相手の牌は回転
@@ -776,31 +947,31 @@ class DiscardDisplayManager {
                 tileElement.setAttribute('role', 'listitem');
                 row.appendChild(tileElement);
             });
-            
+
             // 行を追加（CSS column-reverseにより下から上へ表示される）
             this.opponentDiscardArea.appendChild(row);
         });
     }
-    
+
     // 牌を6枚ずつの行に分割（1行6牌の制限機能）
     createTileRows(tiles) {
         const rows = [];
         const maxTilesPerRow = 6;
-        
+
         // 牌を6枚ずつのグループに分割
         for (let i = 0; i < tiles.length; i += maxTilesPerRow) {
             const rowTiles = tiles.slice(i, i + maxTilesPerRow);
             rows.push(rowTiles);
         }
-        
+
         return rows;
     }
-    
+
     // 新しい牌を追加する際の行計算（インクリメンタル更新用）
     calculateRowPlacement(currentTileCount, newTileCount = 1) {
         const maxTilesPerRow = 6;
         const totalTiles = currentTileCount + newTileCount;
-        
+
         return {
             totalRows: Math.ceil(totalTiles / maxTilesPerRow),
             currentRow: Math.floor(currentTileCount / maxTilesPerRow),
@@ -808,77 +979,77 @@ class DiscardDisplayManager {
             needsNewRow: (currentTileCount % maxTilesPerRow) === 0 && currentTileCount > 0
         };
     }
-    
+
     // 行の満杯状態をチェック
     isRowFull(rowElement) {
         return rowElement.children.length >= 6;
     }
-    
+
     // 空の行を作成
     createEmptyRow(rowIndex, isOpponent = false) {
         const row = document.createElement('div');
         row.className = 'discard-row';
         row.dataset.rowIndex = rowIndex;
-        
+
         if (isOpponent) {
             row.classList.add('opponent-row');
         }
-        
+
         return row;
     }
-    
+
     // 単一牌をプレイヤーエリアに追加（インクリメンタル更新用）
     addPlayerTile(tile) {
         if (!this.playerDiscardArea) return;
-        
+
         const currentTileCount = this.playerDiscardArea.querySelectorAll('.discard-tile').length;
         const placement = this.calculateRowPlacement(currentTileCount);
-        
+
         let targetRow = this.playerDiscardArea.children[placement.currentRow];
-        
+
         // 新しい行が必要な場合
         if (!targetRow || placement.needsNewRow) {
             targetRow = this.createEmptyRow(placement.currentRow, false);
             this.playerDiscardArea.appendChild(targetRow);
         }
-        
+
         // 牌要素を作成して追加
         const tileElement = createDiscardTileElement(tile, false);
         tileElement.dataset.tileIndex = placement.currentRowPosition;
         targetRow.appendChild(tileElement);
-        
+
         // 行が満杯になった場合のマーク
         if (this.isRowFull(targetRow)) {
             targetRow.classList.add('full');
         }
     }
-    
+
     // 単一牌を相手エリアに追加（インクリメンタル更新用）
     addOpponentTile(tile) {
         if (!this.opponentDiscardArea) return;
-        
+
         const currentTileCount = this.opponentDiscardArea.querySelectorAll('.discard-tile').length;
         const placement = this.calculateRowPlacement(currentTileCount);
-        
+
         let targetRow = this.opponentDiscardArea.children[placement.currentRow];
-        
+
         // 新しい行が必要な場合（CSS column-reverseにより下から上へ表示）
         if (!targetRow || placement.needsNewRow) {
             targetRow = this.createEmptyRow(placement.currentRow, true);
             this.opponentDiscardArea.appendChild(targetRow);
         }
-        
+
         // 牌要素を作成して追加（180度回転）
         const tileElement = createDiscardTileElement(tile, true);
         tileElement.dataset.tileIndex = placement.currentRowPosition;
         targetRow.appendChild(tileElement);
-        
+
         // 行が満杯になった場合のマーク
         if (this.isRowFull(targetRow)) {
             targetRow.classList.add('full');
         }
     }
-    
+
     // 捨て牌エリアをクリア
     clearDiscards() {
         if (this.playerDiscardArea) {
@@ -888,24 +1059,24 @@ class DiscardDisplayManager {
             this.opponentDiscardArea.innerHTML = '';
         }
     }
-    
+
     // デバッグ用：現在の行数と牌数を取得
     getDiscardStats() {
         const playerRows = this.playerDiscardArea ? this.playerDiscardArea.children.length : 0;
         const playerTiles = this.playerDiscardArea ? this.playerDiscardArea.querySelectorAll('.discard-tile').length : 0;
         const opponentRows = this.opponentDiscardArea ? this.opponentDiscardArea.children.length : 0;
         const opponentTiles = this.opponentDiscardArea ? this.opponentDiscardArea.querySelectorAll('.discard-tile').length : 0;
-        
+
         return {
             player: { rows: playerRows, tiles: playerTiles },
             opponent: { rows: opponentRows, tiles: opponentTiles }
         };
     }
-    
+
     // デバッグ用：6牌制限の検証
     validateRowLimits() {
         const issues = [];
-        
+
         // プレイヤー側の検証
         if (this.playerDiscardArea) {
             const playerRows = this.playerDiscardArea.querySelectorAll('.discard-row');
@@ -916,7 +1087,7 @@ class DiscardDisplayManager {
                 }
             });
         }
-        
+
         // 相手側の検証
         if (this.opponentDiscardArea) {
             const opponentRows = this.opponentDiscardArea.querySelectorAll('.discard-row');
@@ -927,7 +1098,7 @@ class DiscardDisplayManager {
                 }
             });
         }
-        
+
         return issues;
     }
 }
@@ -941,9 +1112,9 @@ function testTilePlacementLogic() {
         console.log('DiscardDisplayManager が初期化されていません');
         return;
     }
-    
+
     console.log('=== 牌配置ロジックテスト開始 ===');
-    
+
     // テスト用の牌データを作成
     const testTiles = [];
     for (let i = 1; i <= 13; i++) {
@@ -953,22 +1124,22 @@ function testTilePlacementLogic() {
             value: i <= 9 ? i : (i === 10 ? 'white' : i === 11 ? 'green' : 'red')
         });
     }
-    
+
     // 捨て牌エリアをクリア
     discardDisplayManager.clearDiscards();
-    
+
     // プレイヤー側テスト（上から下へ）
     console.log('プレイヤー側テスト: 13牌を配置（2行 + 1牌）');
     discardDisplayManager.displayPlayerDiscards(testTiles);
-    
+
     // 相手側テスト（下から上へ、180度回転）
     console.log('相手側テスト: 13牌を配置（2行 + 1牌、180度回転）');
     discardDisplayManager.displayOpponentDiscards(testTiles);
-    
+
     // 統計情報を表示
     const stats = discardDisplayManager.getDiscardStats();
     console.log('配置結果:', stats);
-    
+
     // 6牌制限の検証
     const issues = discardDisplayManager.validateRowLimits();
     if (issues.length === 0) {
@@ -976,14 +1147,14 @@ function testTilePlacementLogic() {
     } else {
         console.log('✗ 6牌制限の問題:', issues);
     }
-    
+
     console.log('=== 牌配置ロジックテスト完了 ===');
 }
 
 // テスト用：ゲーム状態統合の検証関数
 function testGameStateIntegration() {
     console.log('=== ゲーム状態統合テスト開始 ===');
-    
+
     // テスト用のゲーム状態を作成
     const testGameState = {
         gameId: 'test-game',
@@ -996,7 +1167,7 @@ function testGameStateIntegration() {
                 discardedTiles: ['1', '2', '3', '白', '發', '中', '7', '8', '9']
             },
             {
-                id: 'player2', 
+                id: 'player2',
                 name: 'テストプレイヤー2',
                 handSize: 4,
                 isRiichi: false,
@@ -1006,21 +1177,21 @@ function testGameStateIntegration() {
         currentPlayerIndex: 0,
         remainingTiles: 30
     };
-    
+
     // プレイヤーIDを設定
     const originalPlayerId = playerId;
     playerId = 'player1';
-    
+
     console.log('テストゲーム状態:', testGameState);
-    
+
     // 捨て牌表示を更新
     updateDiscardDisplay(testGameState);
-    
+
     // 結果を検証
     if (discardDisplayManager) {
         const stats = discardDisplayManager.getDiscardStats();
         console.log('統合テスト結果:', stats);
-        
+
         const issues = discardDisplayManager.validateRowLimits();
         if (issues.length === 0) {
             console.log('✓ ゲーム状態統合が正常に動作しています');
@@ -1028,10 +1199,10 @@ function testGameStateIntegration() {
             console.log('✗ ゲーム状態統合に問題があります:', issues);
         }
     }
-    
+
     // プレイヤーIDを復元
     playerId = originalPlayerId;
-    
+
     console.log('=== ゲーム状態統合テスト完了 ===');
 }
 
@@ -1046,15 +1217,15 @@ function updateDiscardDisplay(gameState) {
     if (!discardDisplayManager) {
         discardDisplayManager = new DiscardDisplayManager();
     }
-    
+
     // ゲーム状態の検証
     if (!gameState || !gameState.players || !playerId) {
         console.warn('捨て牌表示更新: 無効なゲーム状態またはプレイヤーID');
         return;
     }
-    
+
     console.log('捨て牌表示システム統合: ゲーム状態から捨て牌を更新');
-    
+
     // 新しいシステムを使用して捨て牌を更新（時系列順序を保持）
     discardDisplayManager.updateDiscards(gameState, playerId);
 }
@@ -1064,18 +1235,18 @@ function updateDiscardDisplay(gameState) {
 function createDiscardTileElement(tile, isOpponent = false) {
     const tileElement = document.createElement('div');
     tileElement.className = 'discard-tile';
-    
+
     // 牌の表示テキストを設定（displayTextがある場合はそれを使用）
     const displayText = tile.displayText || getTileDisplayText(tile);
     tileElement.textContent = displayText;
-    
+
     // アクセシビリティ属性を追加
     const playerType = isOpponent ? '相手' : 'あなた';
     const rotationInfo = isOpponent ? '（180度回転）' : '';
     tileElement.setAttribute('role', 'img');
     tileElement.setAttribute('aria-label', `${playerType}の捨て牌: ${displayText}${rotationInfo}`);
     tileElement.setAttribute('tabindex', '0'); // キーボードナビゲーション対応
-    
+
     // 牌の種類に応じてクラスを追加
     if (tile.suit === 'bamboo') {
         tileElement.classList.add('bamboo');
@@ -1086,23 +1257,23 @@ function createDiscardTileElement(tile, isOpponent = false) {
     } else if (tile.suit === 'unknown') {
         tileElement.classList.add('unknown');
     }
-    
+
     // 相手の牌の場合は回転クラスを追加
     if (isOpponent) {
         tileElement.classList.add('opponent');
     }
-    
+
     // データ属性を設定
     tileElement.dataset.tileId = tile.id;
     tileElement.dataset.suit = tile.suit;
     tileElement.dataset.value = tile.value;
     tileElement.dataset.playerType = playerType;
-    
+
     // 時系列情報があれば設定
     if (tile.timestamp) {
         tileElement.dataset.timestamp = tile.timestamp;
     }
-    
+
     // キーボードイベントハンドラー（アクセシビリティ向上）
     tileElement.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -1112,7 +1283,7 @@ function createDiscardTileElement(tile, isOpponent = false) {
             announceToScreenReader(announcement);
         }
     });
-    
+
     return tileElement;
 }
 
@@ -1123,9 +1294,9 @@ function announceToScreenReader(message) {
     announcement.setAttribute('aria-atomic', 'true');
     announcement.className = 'sr-only';
     announcement.textContent = message;
-    
+
     document.body.appendChild(announcement);
-    
+
     // 短時間後に削除
     setTimeout(() => {
         document.body.removeChild(announcement);
@@ -1135,13 +1306,13 @@ function announceToScreenReader(message) {
 function showGameScreen() {
     waitingScreen.style.display = 'none';
     gameScreen.style.display = 'block';
-    
+
     // DiscardDisplayManagerを初期化（まだ初期化されていない場合）
     if (!discardDisplayManager) {
         discardDisplayManager = new DiscardDisplayManager();
         console.log('DiscardDisplayManager初期化完了 - ゲーム画面表示時');
     }
-    
+
     // 捨て牌エリアの初期状態を確認
     if (discardDisplayManager.playerDiscardArea && discardDisplayManager.opponentDiscardArea) {
         console.log('捨て牌表示エリア確認: 正常に初期化済み');
@@ -1153,7 +1324,7 @@ function showGameScreen() {
 function showWaitingScreen() {
     waitingScreen.style.display = 'block';
     gameScreen.style.display = 'none';
-    
+
     // 捨て牌表示をクリア
     if (discardDisplayManager) {
         discardDisplayManager.clearDiscards();
@@ -1162,10 +1333,10 @@ function showWaitingScreen() {
 
 function updateGameDisplay(gameState) {
     console.log('ゲーム状態更新:', gameState);
-    
+
     const previousGameState = currentGameState;
     currentGameState = gameState;
-    
+
     // プレイヤーIDを設定（初回のみ）
     if (!playerId && gameState.players && gameState.players.length > 0) {
         // Socket IDと一致するプレイヤーを探す
@@ -1176,29 +1347,29 @@ function updateGameDisplay(gameState) {
             console.log('プレイヤーID設定:', playerId);
         }
     }
-    
+
     // プレイヤー情報の更新
     const player = gameState.players.find(p => p.id === playerId);
     const opponent = gameState.players.find(p => p.id !== playerId);
-    
+
     console.log('現在のプレイヤー:', player);
     console.log('プレイヤー手牌データ:', gameState.playerHandTiles);
-    
+
     if (player) {
         updatePlayerStatus(player, false);
-        
+
         // 手牌の表示（自分の手番で手牌が5枚の時のみクリック可能）
         const isPlayerTurn = gameState.currentPlayerIndex === gameState.players.indexOf(player);
         const playerHand = gameState.playerHandTiles || []; // 正しい手牌データを使用
         console.log('表示する手牌:', playerHand);
         const canDiscardTile = isPlayerTurn && playerHand.length === 5;
-        
+
         // 引いた牌の検出：前回より手牌が1枚増えた場合
         let drawnTile = null;
         if (previousGameState && previousGameState.playerHandTiles) {
             const previousHandSize = previousGameState.playerHandTiles.length;
             const currentHandSize = playerHand.length;
-            
+
             if (currentHandSize === previousHandSize + 1 && currentHandSize === 5) {
                 // 新しく追加された牌を引いた牌として特定
                 const previousTileIds = new Set(previousGameState.playerHandTiles.map(t => t.id));
@@ -1206,37 +1377,37 @@ function updateGameDisplay(gameState) {
                 console.log('引いた牌を検出:', drawnTile);
             }
         }
-        
+
         // 引いた牌が検出できない場合でも、5枚の時は最後の牌を引いた牌として扱う
         if (!drawnTile && playerHand.length === 5 && isPlayerTurn) {
             drawnTile = playerHand[playerHand.length - 1];
             console.log('5枚時の引いた牌として扱う:', drawnTile);
         }
-        
+
         displayPlayerHand(playerHand, canDiscardTile, drawnTile);
     }
-    
+
     if (opponent) {
         updatePlayerStatus(opponent, true);
         displayOpponentHand(opponent.handSize); // 使用 handSize プロパティ
     }
-    
+
     // 捨て牌の表示（新しいシステムとの統合）
     updateDiscardDisplay(gameState);
-    
+
     // ゲーム情報の更新
     updateRemainingTiles(gameState.remainingTiles);
     updateTurnIndicator(gameState);
-    
+
     // 手番が変わった場合のアニメーション
     if (previousGameState && previousGameState.currentPlayerIndex !== gameState.currentPlayerIndex) {
         addGameStateAnimation();
     }
-    
+
     // ボタンの状態更新
     const isMyTurn = gameState.players[gameState.currentPlayerIndex]?.id === playerId;
     updateButtonStates(gameState, isMyTurn);
-    
+
     // 上がり判定（実際の判定ロジックは後で実装）
     if (player && isMyTurn) {
         // ここで実際のツモ・ロン判定を行う
@@ -1247,17 +1418,29 @@ function updateGameDisplay(gameState) {
 
 function updateButtonStates(gameState, isMyTurn) {
     const player = gameState.players.find(p => p.id === playerId);
-    
+
     if (!player) return;
-    
+
     const playerHand = gameState.playerHandTiles || []; // 正しい手牌データを使用
-    
+
     // 牌を引くボタン
     drawBtn.disabled = !isMyTurn || playerHand.length >= 5;
-    
-    // リーチボタン（テンパイ状態で有効化 - 実際の判定は後で実装）
-    riichiBtn.disabled = !isMyTurn || player.isRiichi || playerHand.length !== 4;
-    
+
+    // リーチボタンの条件を修正
+    // リーチは以下の条件をすべて満たす場合のみ有効:
+    // 1. 自分の手番
+    // 2. まだリーチしていない
+    // 3. 手牌が5枚（牌を引いた状態）
+    // 4. 牌が選択されている
+    // 5. 選択した牌を捨てた後の4枚がテンパイ状態
+    const canDeclareRiichi = isMyTurn &&
+        !player.isRiichi &&
+        playerHand.length === 5 &&
+        selectedTile &&
+        checkTenpaiAfterDiscard(playerHand, selectedTile);
+
+    riichiBtn.disabled = !canDeclareRiichi;
+
     // ロン・ツモボタンは後で実装
     ronBtn.style.display = 'none';
     tsumoBtn.style.display = 'none';
@@ -1268,12 +1451,7 @@ drawBtn.addEventListener('click', () => {
     if (!drawBtn.disabled) {
         if (safeEmit('drawTile')) {
             drawBtn.disabled = true; // 重複送信を防ぐ
-            selectedTile = null; // 選択をリセット
-            // 選択状態をクリア
-            const selected = document.querySelector('.tile.selected');
-            if (selected) {
-                selected.classList.remove('selected');
-            }
+            clearTileSelection(); // 選択をリセット
         }
     }
 });
@@ -1292,23 +1470,18 @@ function discardSelectedTile() {
         const player = currentGameState.players.find(p => p.id === playerId);
         const isPlayerTurn = currentGameState.currentPlayerIndex === currentGameState.players.indexOf(player);
         const playerHand = currentGameState.playerHandTiles || []; // 正しい手牌データを使用
-        
+
         if (isPlayerTurn && playerHand.length === 5) {
             if (safeEmit('discardTile', { tileId: selectedTile.id })) {
-                selectedTile = null;
-                
                 // 選択状態をクリア
-                const selected = document.querySelector('.tile.selected');
-                if (selected) {
-                    selected.classList.remove('selected');
-                }
-                
+                clearTileSelection();
+
                 // 一時的にクリックを無効化
                 const tiles = document.querySelectorAll('.tile.clickable');
                 tiles.forEach(tile => {
                     tile.style.pointerEvents = 'none';
                 });
-                
+
                 setTimeout(() => {
                     tiles.forEach(tile => {
                         tile.style.pointerEvents = 'auto';
@@ -1334,15 +1507,15 @@ function showGameResult(result) {
     const resultTitle = document.getElementById('result-title');
     const resultMessage = document.getElementById('result-message');
     const newGameBtn = document.getElementById('new-game-btn');
-    
+
     // 結果に応じてタイトルとメッセージを設定
     if (result.winner) {
         const isWinner = result.winner.id === playerId;
-        
+
         if (isWinner) {
             resultTitle.textContent = '勝利！';
             resultTitle.style.color = '#4caf50';
-            
+
             if (result.result === 'tsumo') {
                 const tileText = result.winningTile ? getTileDisplayText(result.winningTile) : '不明';
                 resultMessage.textContent = `ツモで上がりました！\n上がり牌: ${tileText}`;
@@ -1353,7 +1526,7 @@ function showGameResult(result) {
         } else {
             resultTitle.textContent = '敗北';
             resultTitle.style.color = '#f44336';
-            
+
             if (result.result === 'tsumo') {
                 const tileText = result.winningTile ? getTileDisplayText(result.winningTile) : '不明';
                 resultMessage.textContent = `相手がツモで上がりました\n上がり牌: ${tileText}`;
@@ -1373,25 +1546,25 @@ function showGameResult(result) {
         resultTitle.style.color = '#666';
         resultMessage.textContent = result.message || 'ゲームが終了しました';
     }
-    
+
     // 結果画面を表示
     gameResult.style.display = 'flex';
-    
+
     // 新しいゲームボタンのイベントリスナー
     newGameBtn.onclick = () => {
         gameResult.style.display = 'none';
         showWaitingScreen();
-        
+
         // ゲーム状態をリセット
         currentGameState = null;
         selectedTile = null;
-        
+
         // 保存されたゲーム情報をクリア
         localStorage.removeItem('currentGameId');
-        
+
         // タイマーをクリア
         clearTurnTimer();
-        
+
         // 新しいゲームを要求
         safeEmit('requestNewGame');
     };
@@ -1401,7 +1574,7 @@ function updateTurnIndicator(gameState) {
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
     const isMyTurn = currentPlayer && currentPlayer.id === playerId;
     const turnElement = document.getElementById('current-turn');
-    
+
     if (isMyTurn) {
         turnElement.textContent = 'あなた';
         turnElement.style.color = '#4caf50';
@@ -1416,7 +1589,7 @@ function updateTurnIndicator(gameState) {
 function updateRemainingTiles(count) {
     const remainingElement = document.getElementById('remaining-tiles');
     remainingElement.textContent = count;
-    
+
     // 残り牌数に応じて色を変更
     if (count <= 5) {
         remainingElement.style.color = '#f44336';
@@ -1433,9 +1606,9 @@ function updateRemainingTiles(count) {
 function updatePlayerStatus(player, isOpponent = false) {
     const nameElement = document.getElementById(isOpponent ? 'opponent-name' : 'player-name');
     const riichiElement = document.getElementById(isOpponent ? 'opponent-riichi' : 'player-riichi');
-    
+
     nameElement.textContent = player.name || (isOpponent ? '相手' : 'プレイヤー');
-    
+
     if (player.isRiichi) {
         riichiElement.style.display = 'inline';
         riichiElement.classList.add('riichi-active');
@@ -1448,7 +1621,7 @@ function updatePlayerStatus(player, isOpponent = false) {
 function showWinningOptions(canTsumo, canRon) {
     const tsumoBtn = document.getElementById('tsumo-btn');
     const ronBtn = document.getElementById('ron-btn');
-    
+
     if (canTsumo) {
         tsumoBtn.style.display = 'inline-block';
         tsumoBtn.onclick = () => {
@@ -1459,7 +1632,7 @@ function showWinningOptions(canTsumo, canRon) {
     } else {
         tsumoBtn.style.display = 'none';
     }
-    
+
     if (canRon) {
         ronBtn.style.display = 'inline-block';
         ronBtn.onclick = () => {
@@ -1476,7 +1649,7 @@ function addGameStateAnimation() {
     // 手番変更時のアニメーション
     const gameInfo = document.querySelector('.game-info');
     gameInfo.classList.add('turn-change');
-    
+
     setTimeout(() => {
         gameInfo.classList.remove('turn-change');
     }, 500);
@@ -1485,7 +1658,7 @@ function addGameStateAnimation() {
 // 通信とエラーハンドリング機能
 function updateConnectionStatus(connected) {
     const header = document.querySelector('header h1');
-    
+
     if (connected) {
         header.style.color = '#ffd700';
         header.textContent = '５枚麻雀';
@@ -1498,7 +1671,7 @@ function updateConnectionStatus(connected) {
 function updateWaitingMessage(currentPlayers, requiredPlayers) {
     const waitingScreen = document.querySelector('.waiting-screen');
     const messageElement = waitingScreen.querySelector('p');
-    
+
     messageElement.textContent = `プレイヤー ${currentPlayers}/${requiredPlayers} - 他のプレイヤーの接続を待っています`;
 }
 
@@ -1507,7 +1680,7 @@ function showMessage(message, duration = 3000) {
     const messageDiv = document.createElement('div');
     messageDiv.className = 'game-message';
     messageDiv.textContent = message;
-    
+
     // スタイルを設定
     messageDiv.style.cssText = `
         position: fixed;
@@ -1522,9 +1695,9 @@ function showMessage(message, duration = 3000) {
         font-weight: bold;
         animation: messageSlideIn 0.3s ease-out;
     `;
-    
+
     document.body.appendChild(messageDiv);
-    
+
     // 指定時間後に削除
     setTimeout(() => {
         messageDiv.style.animation = 'messageSlideOut 0.3s ease-in';
@@ -1541,7 +1714,7 @@ function showError(message, duration = 5000) {
     const errorDiv = document.createElement('div');
     errorDiv.className = 'error-message';
     errorDiv.textContent = message;
-    
+
     // スタイルを設定
     errorDiv.style.cssText = `
         position: fixed;
@@ -1558,9 +1731,9 @@ function showError(message, duration = 5000) {
         text-align: center;
         animation: messageSlideIn 0.3s ease-out;
     `;
-    
+
     document.body.appendChild(errorDiv);
-    
+
     // 指定時間後に削除
     setTimeout(() => {
         errorDiv.style.animation = 'messageSlideOut 0.3s ease-in';
@@ -1585,7 +1758,7 @@ function getErrorMessage(errorType, defaultMessage) {
         'already_in_game': '既にゲームに参加しています',
         'connection_error': '接続エラーが発生しました'
     };
-    
+
     return errorMessages[errorType] || defaultMessage || 'エラーが発生しました';
 }
 
@@ -1595,7 +1768,7 @@ function safeEmit(event, data = {}) {
         showError('サーバーに接続されていません');
         return false;
     }
-    
+
     try {
         socket.emit(event, data);
         return true;
@@ -1610,12 +1783,12 @@ function safeEmit(event, data = {}) {
 function attemptReconnection() {
     if (!isConnected) {
         console.log('再接続を試行中...');
-        
+
         // 既存のゲーム情報があれば再接続を試行
         const savedGameId = localStorage.getItem('currentGameId');
         if (savedGameId && currentGameState) {
             socket.connect();
-            
+
             // 接続後に再接続を試行
             socket.once('connect', () => {
                 safeEmit('attemptReconnection', { gameId: savedGameId });
@@ -1637,18 +1810,18 @@ setInterval(() => {
 function startTurnTimer(currentPlayerId, timeLimit) {
     // 既存のタイマーをクリア
     clearTurnTimer();
-    
+
     const isMyTurn = currentPlayerId === playerId;
     turnTimeRemaining = timeLimit / 1000; // 秒に変換
-    
+
     // タイマー表示を更新
     updateTimerDisplay(isMyTurn);
-    
+
     // 1秒ごとにタイマーを更新
     turnTimerId = setInterval(() => {
         turnTimeRemaining--;
         updateTimerDisplay(isMyTurn);
-        
+
         if (turnTimeRemaining <= 0) {
             clearTurnTimer();
         }
@@ -1661,7 +1834,7 @@ function clearTurnTimer() {
         turnTimerId = null;
     }
     turnTimeRemaining = 0;
-    
+
     // タイマー表示をクリア
     const timerElement = document.getElementById('turn-timer');
     if (timerElement) {
@@ -1671,7 +1844,7 @@ function clearTurnTimer() {
 
 function updateTimerDisplay(isMyTurn) {
     let timerElement = document.getElementById('turn-timer');
-    
+
     // タイマー要素が存在しない場合は作成
     if (!timerElement) {
         timerElement = document.createElement('div');
@@ -1689,13 +1862,13 @@ function updateTimerDisplay(isMyTurn) {
         `;
         document.body.appendChild(timerElement);
     }
-    
+
     if (turnTimeRemaining > 0) {
         timerElement.style.display = 'block';
-        
+
         const playerText = isMyTurn ? 'あなた' : '相手';
         timerElement.textContent = `${playerText}の手番: ${turnTimeRemaining}秒`;
-        
+
         // 残り時間に応じて色を変更
         if (turnTimeRemaining <= 5) {
             timerElement.style.backgroundColor = 'rgba(244, 67, 54, 0.9)';
