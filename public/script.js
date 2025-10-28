@@ -246,13 +246,213 @@ function handleTileClick(tile, tileElement) {
     console.log('選択された牌:', tile);
 }
 
-function displayPlayerHand(tiles, isClickable = false) {
+// 手牌の表示順序をソートする関数
+function sortTilesForDisplay(tiles) {
+    if (!Array.isArray(tiles)) {
+        console.warn('sortTilesForDisplay: 無効な牌データ', tiles);
+        return [];
+    }
+    
+    // 空の配列や無効な牌データをフィルタリング
+    const validTiles = tiles.filter(tile => 
+        tile && 
+        typeof tile === 'object' && 
+        tile.suit && 
+        tile.value !== undefined && 
+        tile.value !== null
+    );
+    
+    if (validTiles.length === 0) {
+        return [];
+    }
+    
+    return [...validTiles].sort((a, b) => {
+        // 牌の種類による優先順位を決定
+        const getSuitPriority = (tile) => {
+            if (tile.suit === 'bamboo') return 1; // 索子が最優先
+            if (tile.suit === 'honor') return 2;  // 字牌が次
+            return 3; // その他（unknown等）は最後
+        };
+        
+        // 字牌の値による優先順位を決定
+        const getHonorPriority = (value) => {
+            switch (value) {
+                case 'white': return 1; // 白
+                case 'green': return 2; // 發
+                case 'red': return 3;   // 中
+                default: return 4;      // その他
+            }
+        };
+        
+        const suitPriorityA = getSuitPriority(a);
+        const suitPriorityB = getSuitPriority(b);
+        
+        // まず牌の種類でソート
+        if (suitPriorityA !== suitPriorityB) {
+            return suitPriorityA - suitPriorityB;
+        }
+        
+        // 同じ種類の牌の場合、値でソート
+        if (a.suit === 'bamboo' && b.suit === 'bamboo') {
+            // 索子は数値順（1-9）
+            const valueA = parseInt(a.value) || 0;
+            const valueB = parseInt(b.value) || 0;
+            return valueA - valueB;
+        }
+        
+        if (a.suit === 'honor' && b.suit === 'honor') {
+            // 字牌は白→發→中の順
+            const priorityA = getHonorPriority(a.value);
+            const priorityB = getHonorPriority(b.value);
+            return priorityA - priorityB;
+        }
+        
+        // その他の場合は元の順序を保持
+        return 0;
+    });
+}
+
+// テスト用：牌ソート機能の検証
+function testTileSorting() {
+    console.log('=== 牌ソート機能テスト開始 ===');
+    
+    // テスト用の牌データを作成（意図的にランダムな順序）
+    const testTiles = [
+        { id: 'test-1', suit: 'honor', value: 'red' },     // 中
+        { id: 'test-2', suit: 'bamboo', value: 5 },        // 5
+        { id: 'test-3', suit: 'honor', value: 'white' },   // 白
+        { id: 'test-4', suit: 'bamboo', value: 1 },        // 1
+        { id: 'test-5', suit: 'honor', value: 'green' },   // 發
+        { id: 'test-6', suit: 'bamboo', value: 9 },        // 9
+        { id: 'test-7', suit: 'bamboo', value: 3 },        // 3
+    ];
+    
+    console.log('ソート前:', testTiles.map(t => getTileDisplayText(t)));
+    
+    const sortedTiles = sortTilesForDisplay(testTiles);
+    
+    console.log('ソート後:', sortedTiles.map(t => getTileDisplayText(t)));
+    
+    // 期待される順序: 1, 3, 5, 9, 白, 發, 中
+    const expectedOrder = ['1', '3', '5', '9', '白', '發', '中'];
+    const actualOrder = sortedTiles.map(t => getTileDisplayText(t));
+    
+    const isCorrect = JSON.stringify(expectedOrder) === JSON.stringify(actualOrder);
+    
+    if (isCorrect) {
+        console.log('✓ 牌ソート機能が正常に動作しています');
+    } else {
+        console.log('✗ 牌ソート機能に問題があります');
+        console.log('期待値:', expectedOrder);
+        console.log('実際値:', actualOrder);
+    }
+    
+    console.log('=== 牌ソート機能テスト完了 ===');
+    
+    return isCorrect;
+}
+
+// コンソールから呼び出し可能なテスト関数
+window.testTileSorting = testTileSorting;
+
+// 手牌表示機能のテスト
+function testHandDisplay() {
+    console.log('=== 手牌表示機能テスト開始 ===');
+    
+    const testHand4 = [
+        { id: 'test-1', suit: 'honor', value: 'red' },
+        { id: 'test-2', suit: 'bamboo', value: 5 },
+        { id: 'test-3', suit: 'honor', value: 'white' },
+        { id: 'test-4', suit: 'bamboo', value: 1 }
+    ];
+    
+    const testHand5 = [
+        ...testHand4,
+        { id: 'test-5', suit: 'bamboo', value: 9 }
+    ];
+    
+    console.log('4枚手牌テスト:');
+    console.log('入力:', testHand4.map(t => getTileDisplayText(t)));
+    
+    console.log('5枚手牌テスト（引いた牌あり）:');
+    console.log('入力:', testHand5.map(t => getTileDisplayText(t)));
+    console.log('引いた牌:', getTileDisplayText(testHand5[4]));
+    
+    // 重複牌テスト
+    console.log('\n重複牌テスト:');
+    const duplicateHand = [
+        { id: 'dup-1', suit: 'bamboo', value: 5 },
+        { id: 'dup-2', suit: 'honor', value: 'white' },
+        { id: 'dup-3', suit: 'bamboo', value: 1 },
+        { id: 'dup-4', suit: 'honor', value: 'red' }
+    ];
+    const drawnDuplicate = { id: 'dup-5', suit: 'bamboo', value: 5 }; // 既存の5と同じ
+    const handWithDuplicate = [...duplicateHand, drawnDuplicate];
+    
+    console.log('基本手牌:', duplicateHand.map(t => getTileDisplayText(t)));
+    console.log('引いた牌:', getTileDisplayText(drawnDuplicate), '(既存の牌と重複)');
+    console.log('全手牌:', handWithDuplicate.map(t => getTileDisplayText(t)));
+    console.log('期待結果: ソート済み4枚 + 区切り + 引いた牌');
+    
+    console.log('=== 手牌表示機能テスト完了 ===');
+    console.log('詳細なテストは hand-display-test.html で確認できます');
+}
+
+window.testHandDisplay = testHandDisplay;
+
+function displayPlayerHand(tiles, isClickable = false, drawnTile = null) {
     playerHand.innerHTML = '';
     
-    tiles.forEach(tile => {
+    if (!Array.isArray(tiles)) {
+        console.warn('displayPlayerHand: 無効な手牌データ', tiles);
+        return;
+    }
+    
+    // 引いた牌がある場合は、それを除いて残りの牌をソート
+    let handTiles = [...tiles];
+    let separateDrawnTile = null;
+    
+    if (drawnTile) {
+        // 引いた牌を手牌から除外（IDで特定の1枚のみを除外）
+        // 重複牌対応: 同じ値の牌が複数ある場合でも、IDで特定の1枚だけを除外
+        separateDrawnTile = drawnTile;
+        let drawnTileRemoved = false;
+        handTiles = tiles.filter(tile => {
+            if (!drawnTileRemoved && tile.id === drawnTile.id) {
+                drawnTileRemoved = true;
+                return false; // この1枚だけを除外
+            }
+            return true;
+        });
+    } else if (tiles.length === 5) {
+        // 5枚の場合、最後の牌を引いた牌として扱う（ソートしない）
+        separateDrawnTile = tiles[tiles.length - 1];
+        handTiles = tiles.slice(0, -1);
+    }
+    
+    // 基本手牌（4枚）をソートして表示
+    const sortedTiles = sortTilesForDisplay(handTiles);
+    
+    sortedTiles.forEach(tile => {
         const tileElement = createTileElement(tile, isClickable);
+        tileElement.classList.add('sorted-tile');
         playerHand.appendChild(tileElement);
     });
+    
+    // 引いた牌がある場合は右端に表示（ソートしない）
+    if (separateDrawnTile) {
+        // 区切り線を追加
+        const separator = document.createElement('div');
+        separator.className = 'tile-separator';
+        separator.setAttribute('aria-hidden', 'true');
+        playerHand.appendChild(separator);
+        
+        // 引いた牌を表示
+        const drawnTileElement = createTileElement(separateDrawnTile, isClickable);
+        drawnTileElement.classList.add('drawn-tile');
+        drawnTileElement.setAttribute('aria-label', `引いた牌: ${getTileDisplayText(separateDrawnTile)}`);
+        playerHand.appendChild(drawnTileElement);
+    }
 }
 
 function displayOpponentHand(tileCount) {
@@ -947,7 +1147,28 @@ function updateGameDisplay(gameState) {
         const playerHand = gameState.playerHandTiles || []; // 正しい手牌データを使用
         console.log('表示する手牌:', playerHand);
         const canDiscardTile = isPlayerTurn && playerHand.length === 5;
-        displayPlayerHand(playerHand, canDiscardTile);
+        
+        // 引いた牌の検出：前回より手牌が1枚増えた場合
+        let drawnTile = null;
+        if (previousGameState && previousGameState.playerHandTiles) {
+            const previousHandSize = previousGameState.playerHandTiles.length;
+            const currentHandSize = playerHand.length;
+            
+            if (currentHandSize === previousHandSize + 1 && currentHandSize === 5) {
+                // 新しく追加された牌を引いた牌として特定
+                const previousTileIds = new Set(previousGameState.playerHandTiles.map(t => t.id));
+                drawnTile = playerHand.find(tile => !previousTileIds.has(tile.id));
+                console.log('引いた牌を検出:', drawnTile);
+            }
+        }
+        
+        // 引いた牌が検出できない場合でも、5枚の時は最後の牌を引いた牌として扱う
+        if (!drawnTile && playerHand.length === 5 && isPlayerTurn) {
+            drawnTile = playerHand[playerHand.length - 1];
+            console.log('5枚時の引いた牌として扱う:', drawnTile);
+        }
+        
+        displayPlayerHand(playerHand, canDiscardTile, drawnTile);
     }
     
     if (opponent) {

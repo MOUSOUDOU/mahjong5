@@ -47,6 +47,21 @@
             <p>ブラウザのウィンドウサイズを変更して、レスポンシブデザインの動作を確認してください</p>
         </div>
         
+        <!-- 手牌表示機能のデモンストレーション -->
+        <div style="background: #e8f5e8; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+            <h3>🎯 手牌表示機能デモ</h3>
+            <p><strong>実装完了:</strong> 麻雀の慣例に従った手牌表示システム</p>
+            <ul style="margin: 10px 0; padding-left: 20px;">
+                <li><strong>基本手牌（4枚）:</strong> 索子（1-9）→ 字牌（白發中）の順でソート表示</li>
+                <li><strong>牌を引いた時（5枚）:</strong> 引いた牌は右端に分離表示（ソートしない）</li>
+                <li><strong>牌を捨てた後:</strong> 残りの4枚を再ソートして表示</li>
+                <li><strong>視覚的区別:</strong> 引いた牌には区切り線と「引」マークを表示</li>
+            </ul>
+            <p style="font-size: 14px; color: #666;">
+                ※ 詳細なテストは <a href="hand-display-test.html" target="_blank">hand-display-test.html</a> で確認できます
+            </p>
+        </div>
+        
         <!-- 捨て牌エリア -->
         <div class="discard-display-container" role="region" aria-label="捨て牌表示エリア">
             <div class="opponent-discard-area" id="opponent-discard-area" role="region" aria-labelledby="opponent-discard-title">

@@ -156,6 +156,71 @@ header h1 {
     font-weight: 900;
 }
 
+/* 手牌の特殊表示スタイル */
+.tile-separator {
+    width: 3px;
+    height: 60px;
+    background: linear-gradient(to bottom, 
+        transparent, 
+        rgba(158,158,158,0.4), 
+        rgba(158,158,158,0.6), 
+        rgba(158,158,158,0.4), 
+        transparent);
+    border-radius: 2px;
+    margin: 5px 8px;
+    align-self: center;
+    position: relative;
+}
+
+.tile-separator::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 1px;
+    height: 40px;
+    background: rgba(255,255,255,0.6);
+    border-radius: 1px;
+}
+
+.tile.drawn-tile {
+    border-color: #2196f3;
+    box-shadow: 0 0 12px rgba(33,150,243,0.4);
+    position: relative;
+}
+
+.tile.drawn-tile::after {
+    content: '引';
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    background: #2196f3;
+    color: white;
+    font-size: 0.6rem;
+    font-weight: bold;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.tile.sorted-tile {
+    /* ソート済み牌の基本スタイル（既存のスタイルを継承） */
+}
+
+/* 手牌エリアのレイアウト調整 */
+.opponent-hand, .player-hand {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: nowrap; /* 改行を防ぐ */
+    align-items: center;
+}
+
 /* 捨て牌表示コンテナ */
 .discard-display-container {
     display: flex;
@@ -789,6 +854,20 @@ header h1 {
         font-size: 1.05rem;
     }
     
+    .tile-separator {
+        width: 2px;
+        height: 50px;
+        margin: 5px 6px;
+    }
+    
+    .tile.drawn-tile::after {
+        width: 14px;
+        height: 14px;
+        font-size: 0.55rem;
+        top: -7px;
+        right: -7px;
+    }
+    
     .discarded-tiles .tile {
         width: 34px;
         height: 48px;
@@ -878,6 +957,20 @@ header h1 {
         width: 38px;
         height: 54px;
         font-size: 0.95rem;
+    }
+    
+    .tile-separator {
+        width: 2px;
+        height: 45px;
+        margin: 3px 4px;
+    }
+    
+    .tile.drawn-tile::after {
+        width: 12px;
+        height: 12px;
+        font-size: 0.5rem;
+        top: -6px;
+        right: -6px;
     }
     
     .discarded-tiles .tile {
