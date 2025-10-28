@@ -34,11 +34,30 @@
                 </div>
 
                 <!-- 捨て牌エリア -->
-                <div class="discard-area">
-                    <h3>捨て牌</h3>
-                    <div class="discarded-tiles" id="discarded-tiles">
-                        <!-- 捨て牌がここに表示される -->
+                <div class="discard-display-container" role="region" aria-label="捨て牌表示エリア">
+                    <div class="opponent-discard-area" id="opponent-discard-area" role="region" aria-labelledby="opponent-discard-title">
+                        <h4 id="opponent-discard-title">相手の捨て牌</h4>
+                        <div class="discard-content" id="opponent-discard-content" role="list" aria-label="相手の捨て牌一覧（180度回転表示、下から上へ配置）">
+                            <!-- 相手の捨て牌がここに表示される -->
+                        </div>
                     </div>
+                    <div class="player-discard-area" id="player-discard-area" role="region" aria-labelledby="player-discard-title">
+                        <h4 id="player-discard-title">あなたの捨て牌</h4>
+                        <div class="discard-content" id="player-discard-content" role="list" aria-label="あなたの捨て牌一覧（通常表示、上から下へ配置）">
+                            <!-- プレイヤーの捨て牌がここに表示される -->
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- スクリーンリーダー用の説明（非表示） -->
+                <div id="bamboo-suit-description" class="sr-only">
+                    数牌（ソーズ）: 1から9までの数字牌
+                </div>
+                <div id="honor-suit-description" class="sr-only">
+                    字牌: 白、發、中の特殊牌
+                </div>
+                <div id="full-row-description" class="sr-only">
+                    この行は6牌で満杯です
                 </div>
 
                 <!-- ゲーム情報 -->
