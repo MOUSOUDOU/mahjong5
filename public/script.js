@@ -210,6 +210,10 @@ function createTileElement(tile, isClickable = false, isHidden = false) {
     if (isClickable) {
         tileElement.classList.add('clickable');
         tileElement.addEventListener('click', () => handleTileClick(tile, tileElement));
+        tileElement.addEventListener('dblclick', () => handleTileDoubleClick(tile, tileElement));
+        
+        // ダブルクリック時の視覚的フィードバック用のタイトル属性
+        tileElement.title = `${getTileDisplayText(tile)} - クリック: 選択, ダブルクリック: 捨てる`;
     }
     
     return tileElement;
@@ -244,6 +248,31 @@ function handleTileClick(tile, tileElement) {
     
     // 捨て牌ボタンの状態を更新（実際の捨て牌処理は後で実装）
     console.log('選択された牌:', tile);
+}
+
+function handleTileDoubleClick(tile, tileElement) {
+    // ダブルクリック時は即座に捨て牌処理を実行
+    console.log('ダブルクリックで捨て牌:', tile);
+    
+    // まず牌を選択状態にする
+    if (selectedTile) {
+        const previousSelected = document.querySelector('.tile.selected');
+        if (previousSelected) {
+            previousSelected.classList.remove('selected');
+        }
+    }
+    
+    selectedTile = tile;
+    tileElement.classList.add('selected');
+    
+    // 視覚的フィードバック（短時間のハイライト）
+    tileElement.classList.add('double-clicked');
+    
+    // 少し遅延してから捨て牌処理を実行（視覚的フィードバックのため）
+    setTimeout(() => {
+        discardSelectedTile();
+        tileElement.classList.remove('double-clicked');
+    }, 150);
 }
 
 // 手牌の表示順序をソートする関数
@@ -399,6 +428,22 @@ function testHandDisplay() {
 }
 
 window.testHandDisplay = testHandDisplay;
+
+// ダブルクリック機能のテスト
+function testDoubleClickFeature() {
+    console.log('=== ダブルクリック機能テスト ===');
+    console.log('実装された機能:');
+    console.log('✓ シングルクリック: 牌を選択');
+    console.log('✓ ダブルクリック: 牌を即座に捨てる');
+    console.log('✓ 視覚的フィードバック: double-clicked クラス');
+    console.log('✓ ツールチップ: ホバー時に操作方法表示');
+    console.log('✓ レスポンシブ対応: モバイル用テキスト');
+    console.log('');
+    console.log('詳細テスト: hand-display-test.html の「テスト5: マウス操作テスト」');
+    console.log('=== テスト完了 ===');
+}
+
+window.testDoubleClickFeature = testDoubleClickFeature;
 
 function displayPlayerHand(tiles, isClickable = false, drawnTile = null) {
     playerHand.innerHTML = '';

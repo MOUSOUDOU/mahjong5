@@ -101,6 +101,7 @@
             <ul>
                 <li><strong>牌を引く:</strong> 引いた牌は右端に表示（ソートしない）</li>
                 <li><strong>牌を捨てる:</strong> 捨てた後、残りの牌を再ソートして表示</li>
+                <li><strong>マウス操作:</strong> シングルクリック（選択）、ダブルクリック（捨てる）</li>
                 <li><strong>視覚的区別:</strong> 引いた牌には区切り線と「引」マークを表示</li>
                 <li><strong>レスポンシブ:</strong> 画面サイズに応じて適切にスケール</li>
             </ul>
@@ -172,7 +173,23 @@
         </div>
 
         <div class="test-section">
-            <h3>テスト5: レスポンシブ確認</h3>
+            <h3>テスト5: マウス操作テスト</h3>
+            <p>シングルクリック（選択）とダブルクリック（捨てる）の動作確認</p>
+
+            <div class="demo-hand" id="mouse-test-hand"></div>
+
+            <div class="test-controls">
+                <button class="test-btn" onclick="setupMouseTest()">マウス操作テスト開始</button>
+                <button class="test-btn secondary" onclick="resetMouseTest()">リセット</button>
+            </div>
+
+            <div class="status-info" id="mouse-test-status">
+                <strong>操作方法:</strong> 牌をシングルクリック（選択）、ダブルクリック（捨てる）してください
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>テスト6: レスポンシブ確認</h3>
             <p>ブラウザのウィンドウサイズを変更して、レスポンシブ動作を確認してください</p>
 
             <div class="demo-hand" id="responsive-hand"></div>
@@ -445,6 +462,127 @@
             document.getElementById('duplicate-hand').innerHTML = '';
             document.getElementById('duplicate-status').innerHTML =
                 '<strong>状態:</strong> 「重複牌テスト実行」で重複牌の処理を確認してください';
+        }
+
+        // マウス操作テスト用の変数
+        let mouseTestHand = [];
+        let selectedTileForTest = null;
+
+        function setupMouseTest() {
+            mouseTestHand = [
+                { id: 'mouse-1', suit: 'bamboo', value: 3 },
+                { id: 'mouse-2', suit: 'honor', value: 'white' },
+                { id: 'mouse-3', suit: 'bamboo', value: 7 },
+                { id: 'mouse-4', suit: 'honor', value: 'red' },
+                { id: 'mouse-5', suit: 'bamboo', value: 9 }
+            ];
+
+            displayMouseTestHand();
+
+            document.getElementById('mouse-test-status').innerHTML =
+                '<strong>テスト開始:</strong> 牌をクリック（選択）またはダブルクリック（捨てる）してください';
+        }
+
+        function displayMouseTestHand() {
+            const container = document.getElementById('mouse-test-hand');
+            container.innerHTML = '';
+
+            const drawnTile = mouseTestHand.length === 5 ? mouseTestHand[mouseTestHand.length - 1] : null;
+
+            // ソート済み手牌を表示
+            let handTiles = drawnTile ? mouseTestHand.slice(0, -1) : mouseTestHand;
+            const sortedTiles = sortTilesForDisplay(handTiles);
+
+            sortedTiles.forEach(tile => {
+                const tileElement = createTileElement(tile, true);
+                tileElement.classList.add('sorted-tile');
+
+                // テスト用のイベントハンドラーを追加
+                tileElement.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    handleMouseTestClick(tile, tileElement);
+                });
+
+                tileElement.addEventListener('dblclick', (e) => {
+                    e.preventDefault();
+                    handleMouseTestDoubleClick(tile, tileElement);
+                });
+
+                container.appendChild(tileElement);
+            });
+
+            // 引いた牌がある場合
+            if (drawnTile) {
+                const separator = document.createElement('div');
+                separator.className = 'tile-separator';
+                container.appendChild(separator);
+
+                const drawnTileElement = createTileElement(drawnTile, true);
+                drawnTileElement.classList.add('drawn-tile');
+
+                drawnTileElement.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    handleMouseTestClick(drawnTile, drawnTileElement);
+                });
+
+                drawnTileElement.addEventListener('dblclick', (e) => {
+                    e.preventDefault();
+                    handleMouseTestDoubleClick(drawnTile, drawnTileElement);
+                });
+
+                container.appendChild(drawnTileElement);
+            }
+        }
+
+        function handleMouseTestClick(tile, tileElement) {
+            // 既存の選択を解除
+            const previousSelected = document.querySelector('#mouse-test-hand .tile.selected');
+            if (previousSelected) {
+                previousSelected.classList.remove('selected');
+            }
+
+            // 新しい牌を選択
+            selectedTileForTest = tile;
+            tileElement.classList.add('selected');
+
+            document.getElementById('mouse-test-status').innerHTML =
+                `<strong>選択:</strong> 牌「${getTileDisplayText(tile)}」を選択しました。ダブルクリックで捨てることができます。`;
+        }
+
+        function handleMouseTestDoubleClick(tile, tileElement) {
+            // 選択状態にする
+            const previousSelected = document.querySelector('#mouse-test-hand .tile.selected');
+            if (previousSelected) {
+                previousSelected.classList.remove('selected');
+            }
+
+            selectedTileForTest = tile;
+            tileElement.classList.add('selected');
+            tileElement.classList.add('double-clicked');
+
+            document.getElementById('mouse-test-status').innerHTML =
+                `<strong>捨て牌:</strong> 牌「${getTileDisplayText(tile)}」をダブルクリックで捨てました！`;
+
+            // 牌を手牌から除去
+            setTimeout(() => {
+                mouseTestHand = mouseTestHand.filter(t => t.id !== tile.id);
+                displayMouseTestHand();
+
+                if (mouseTestHand.length === 0) {
+                    document.getElementById('mouse-test-status').innerHTML =
+                        '<strong>完了:</strong> ✓ すべての牌を捨てました。マウス操作テスト成功！';
+                } else {
+                    document.getElementById('mouse-test-status').innerHTML =
+                        `<strong>継続:</strong> 残り${mouseTestHand.length}枚。引き続きテストしてください。`;
+                }
+            }, 300);
+        }
+
+        function resetMouseTest() {
+            document.getElementById('mouse-test-hand').innerHTML = '';
+            selectedTileForTest = null;
+            document.getElementById('mouse-test-status').innerHTML =
+                '<strong>操作方法:</strong> 牌をシングルクリック（選択）、ダブルクリック（捨てる）してください';
         }
 
         function showResponsiveTest() {

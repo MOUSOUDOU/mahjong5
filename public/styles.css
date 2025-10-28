@@ -172,6 +172,53 @@ header h1 {
     position: relative;
 }
 
+/* ダブルクリック時の視覚的フィードバック */
+.tile.double-clicked {
+    background: linear-gradient(145deg, #ffebee, #f44336);
+    border-color: #d32f2f;
+    transform: translateY(-10px) scale(1.05);
+    box-shadow: 0 12px 35px rgba(244,67,54,0.4);
+    animation: doubleClickPulse 0.3s ease-out;
+}
+
+@keyframes doubleClickPulse {
+    0% {
+        transform: translateY(-5px) scale(1);
+        box-shadow: 0 8px 25px rgba(244,67,54,0.2);
+    }
+    50% {
+        transform: translateY(-12px) scale(1.08);
+        box-shadow: 0 15px 40px rgba(244,67,54,0.5);
+    }
+    100% {
+        transform: translateY(-10px) scale(1.05);
+        box-shadow: 0 12px 35px rgba(244,67,54,0.4);
+    }
+}
+
+/* クリック可能な牌のホバー効果を強化 */
+.tile.clickable:hover {
+    cursor: pointer;
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(76,175,80,0.3);
+}
+
+.tile.clickable:hover::after {
+    content: 'クリック: 選択 | ダブルクリック: 捨てる';
+    position: absolute;
+    bottom: -25px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.8);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    white-space: nowrap;
+    z-index: 1000;
+    pointer-events: none;
+}
+
 .tile-separator::before {
     content: '';
     position: absolute;
@@ -868,6 +915,13 @@ header h1 {
         right: -7px;
     }
     
+    /* タブレットでのツールチップ調整 */
+    .tile.clickable:hover::after {
+        font-size: 0.65rem;
+        bottom: -22px;
+        padding: 3px 6px;
+    }
+    
     .discarded-tiles .tile {
         width: 34px;
         height: 48px;
@@ -971,6 +1025,14 @@ header h1 {
         font-size: 0.5rem;
         top: -6px;
         right: -6px;
+    }
+    
+    /* モバイルでのツールチップ調整 */
+    .tile.clickable:hover::after {
+        content: 'タップ: 選択 | ダブルタップ: 捨てる';
+        font-size: 0.6rem;
+        bottom: -20px;
+        padding: 2px 4px;
     }
     
     .discarded-tiles .tile {
