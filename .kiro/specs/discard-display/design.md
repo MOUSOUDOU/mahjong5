@@ -2,7 +2,7 @@
 
 ## 概要
 
-この設計書は、麻雀ゲームインターフェースの捨て牌表示機能の詳細な実装設計を定義します。既存の5枚麻雀ゲームシステムに統合され、プレイヤーと相手の捨て牌を中央エリアに分離して表示する機能を提供します。
+この設計書は、麻雀ゲームインターフェースの捨て牌表示機能の詳細な実装設計を定義します。既存の5枚麻雀ゲームシステムに統合され、プレイヤーと相手の捨て牌を中央エリアに分離して表示する機能を提供します。リーチ宣言時に捨てられた牌は横向き（90度回転）で表示され、リーチ状態を視覚的に明確に示します。
 
 ## アーキテクチャ
 
@@ -39,38 +39,59 @@
 ### 1. サーバー側コンポーネント
 
 #### Player.js (既存の拡張)
-既存のPlayer.jsは既に捨て牌機能を持っているため、追加の変更は不要です。
+リーチ牌の情報を追跡するため、既存のPlayer.jsを拡張します。
 
 ```javascript
-// 既存機能（変更不要）
 class Player {
   constructor(id, name) {
     this.discardedTiles = []; // 既に存在
+    this.isReach = false; // リーチ状態
+    this.reachTileIndex = -1; // リーチ牌のインデックス
   }
   
-  discardTile(tile) {
+  discardTile(tile, isReachTile = false) {
     this.discardedTiles.push(tile);
+    if (isReachTile) {
+      this.reachTileIndex = this.discardedTiles.length - 1;
+    }
+  }
+  
+  declareReach() {
+    this.isReach = true;
   }
   
   getDiscardedTilesDisplay() {
-    return this.discardedTiles.map(tile => tile.toString());
+    return this.discardedTiles.map((tile, index) => ({
+      tile: tile.toString(),
+      isReachTile: index === this.reachTileIndex
+    }));
   }
 }
 ```
 
 #### Game.js (既存の拡張)
-既存のGame.jsも捨て牌情報をゲーム状態に含めているため、追加の変更は不要です。
+リーチ牌の情報を含むゲーム状態を提供するため、既存のGame.jsを拡張します。
 
 ```javascript
-// 既存機能（変更不要）
 getGameState() {
   return {
     players: this.players.map(player => ({
       id: player.id,
       name: player.name,
-      discardedTiles: player.getDiscardedTilesDisplay()
+      discardedTiles: player.getDiscardedTilesDisplay(), // リーチ牌情報を含む
+      isReach: player.isReach
     }))
   };
+}
+
+handleReachDeclaration(playerId) {
+  const player = this.getPlayerById(playerId);
+  if (player && player.canDeclareReach()) {
+    player.declareReach();
+    // 次に捨てる牌がリーチ牌となる
+    return true;
+  }
+  return false;
 }
 ```
 
@@ -115,12 +136,36 @@ class DiscardArea {
     this.maxTilesPerRow = 6;
   }
   
-  addTile(tile) {
-    // 牌を追加し、レイアウトを更新
+  addTile(tileData) {
+    // tileData: { tile: string, isReachTile: boolean }
+    this.tiles.push(tileData);
+    this.updateLayout();
+  }
+  
+  updateLayout() {
+    // 6牌/行の制限を考慮してレイアウトを更新
+    // リーチ牌は横向き表示
   }
   
   render() {
     // DOM要素を生成/更新
+    // リーチ牌には特別なCSSクラスを適用
+  }
+  
+  createTileElement(tileData) {
+    const element = document.createElement('div');
+    element.className = 'discard-tile';
+    
+    if (this.isOpponent) {
+      element.classList.add('opponent');
+    }
+    
+    if (tileData.isReachTile) {
+      element.classList.add('reach-tile');
+    }
+    
+    element.textContent = tileData.tile;
+    return element;
   }
 }
 ```
@@ -170,6 +215,16 @@ class DiscardArea {
 .discard-tile.opponent {
   transform: rotate(180deg); /* 180度回転 */
 }
+
+.discard-tile.reach-tile {
+  transform: rotate(90deg); /* リーチ牌は90度回転（横向き） */
+  width: 50px; /* 横向きなので幅と高さを調整 */
+  height: 35px;
+}
+
+.discard-tile.opponent.reach-tile {
+  transform: rotate(270deg); /* 相手のリーチ牌は270度回転 */
+}
 ```
 
 ## データモデル
@@ -181,7 +236,8 @@ class DiscardArea {
   suit: string,      // 牌の種類 ('bamboo', 'honor')
   value: string|number, // 牌の値
   playerId: string,  // 捨てたプレイヤーのID
-  timestamp: number  // 捨てた時刻
+  timestamp: number, // 捨てた時刻
+  isReachTile: boolean // リーチ牌かどうか
 }
 ```
 
@@ -223,6 +279,8 @@ class DiscardArea {
 ### 3. ユーザビリティテスト
 - 6牌/行の制限が正しく機能するか
 - 相手の牌が180度回転して表示されるか
+- リーチ牌が90度回転（横向き）で表示されるか
+- 相手のリーチ牌が270度回転で表示されるか
 - 時系列順序が保持されるか
 
 ## パフォーマンス考慮事項
@@ -263,8 +321,9 @@ class DiscardArea {
 
 ### フェーズ3: 視覚的改善
 1. 180度回転の実装
-2. レイアウト調整（6牌/行制限）
-3. レスポンシブデザイン対応
+2. リーチ牌の90度回転（横向き表示）の実装
+3. レイアウト調整（6牌/行制限）
+4. レスポンシブデザイン対応
 
 ### フェーズ4: 最適化
 1. パフォーマンス改善

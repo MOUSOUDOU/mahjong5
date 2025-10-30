@@ -526,6 +526,46 @@ header h1 {
     transform-origin: center center; /* 回転の中心点を明確に指定 */
 }
 
+/* リーチ牌の90度回転表示（プレイヤー側） */
+.discard-tile.reach-tile {
+    transform: rotate(90deg);
+    transform-origin: center center;
+    width: 51px; /* 横向きなので幅と高さを調整 */
+    height: 36px;
+    position: relative;
+}
+
+/* 相手のリーチ牌の270度回転表示 */
+.discard-tile.opponent.reach-tile {
+    transform: rotate(270deg);
+    transform-origin: center center;
+    width: 51px; /* 横向きなので幅と高さを調整 */
+    height: 36px;
+}
+
+/* リーチ牌の視覚的強調 */
+.discard-tile.reach-tile {
+    border-color: #ff9800;
+    box-shadow: 
+        0 0 8px rgba(255, 152, 0, 0.4),
+        0 2px 4px rgba(0,0,0,0.12),
+        inset 0 1px 0 rgba(255,255,255,0.6);
+    background: linear-gradient(145deg, #fff8e1, #ffecb3);
+}
+
+/* リーチ牌のホバー効果 */
+.discard-tile.reach-tile:hover {
+    box-shadow: 
+        0 0 12px rgba(255, 152, 0, 0.6),
+        0 3px 6px rgba(0,0,0,0.15),
+        inset 0 1px 0 rgba(255,255,255,0.7);
+    transform: rotate(90deg) translateY(-1px);
+}
+
+.discard-tile.opponent.reach-tile:hover {
+    transform: rotate(270deg) translateY(-1px);
+}
+
 /* 相手の捨て牌行（下から上への配置） */
 .opponent-discard-area .discard-row {
     order: 1; /* flex-direction: column-reverse と組み合わせて下から上へ */
@@ -624,6 +664,52 @@ header h1 {
     }
 }
 
+/* リーチ牌の新規追加アニメーション（プレイヤー側） */
+.discard-tile.reach-tile.new-tile {
+    animation: reachTileAppear 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes reachTileAppear {
+    0% {
+        opacity: 0;
+        transform: rotate(90deg) scale(0.7) translateY(10px);
+        box-shadow: 0 0 0 rgba(255, 152, 0, 0);
+    }
+    60% {
+        opacity: 0.8;
+        transform: rotate(90deg) scale(1.05) translateY(-2px);
+        box-shadow: 0 0 15px rgba(255, 152, 0, 0.6);
+    }
+    100% {
+        opacity: 1;
+        transform: rotate(90deg) scale(1) translateY(0);
+        box-shadow: 0 0 8px rgba(255, 152, 0, 0.4);
+    }
+}
+
+/* 相手のリーチ牌の新規追加アニメーション */
+.discard-tile.opponent.reach-tile.new-tile {
+    animation: opponentReachTileAppear 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes opponentReachTileAppear {
+    0% {
+        opacity: 0;
+        transform: rotate(270deg) scale(0.7) translateY(10px);
+        box-shadow: 0 0 0 rgba(255, 152, 0, 0);
+    }
+    60% {
+        opacity: 0.8;
+        transform: rotate(270deg) scale(1.05) translateY(-2px);
+        box-shadow: 0 0 15px rgba(255, 152, 0, 0.6);
+    }
+    100% {
+        opacity: 1;
+        transform: rotate(270deg) scale(1) translateY(0);
+        box-shadow: 0 0 8px rgba(255, 152, 0, 0.4);
+    }
+}
+
 /* 捨て牌エリアのフォーカス効果 */
 .discard-display-container:hover {
     box-shadow: 
@@ -661,6 +747,8 @@ header h1 {
 @media (prefers-reduced-motion: reduce) {
     .discard-tile.new-tile,
     .discard-tile.opponent.new-tile,
+    .discard-tile.reach-tile.new-tile,
+    .discard-tile.opponent.reach-tile.new-tile,
     .discard-row.new-row {
         animation: none;
     }
@@ -873,6 +961,17 @@ header h1 {
         font-size: 0.75rem;
     }
     
+    /* タブレット・中画面でのリーチ牌調整 */
+    .discard-tile.reach-tile {
+        width: 47px;
+        height: 33px;
+    }
+    
+    .discard-tile.opponent.reach-tile {
+        width: 47px;
+        height: 33px;
+    }
+    
     .discard-row {
         max-width: calc(33px * 6 + 4px * 5);
         gap: 3px;
@@ -956,6 +1055,17 @@ header h1 {
         height: 43px;
         font-size: 0.65rem;
         border-width: 1px;
+    }
+    
+    /* タブレット・小画面でのリーチ牌調整 */
+    .discard-tile.reach-tile {
+        width: 43px;
+        height: 30px;
+    }
+    
+    .discard-tile.opponent.reach-tile {
+        width: 43px;
+        height: 30px;
     }
     
     .discard-row {
@@ -1072,6 +1182,17 @@ header h1 {
         border-radius: 3px;
     }
     
+    /* モバイル画面でのリーチ牌調整 */
+    .discard-tile.reach-tile {
+        width: 37px;
+        height: 26px;
+    }
+    
+    .discard-tile.opponent.reach-tile {
+        width: 37px;
+        height: 26px;
+    }
+    
     .discard-row {
         max-width: calc(26px * 6 + 2px * 5);
         gap: 2px;
@@ -1166,6 +1287,17 @@ header h1 {
         font-size: 0.5rem;
     }
     
+    /* 極小画面でのリーチ牌調整 */
+    .discard-tile.reach-tile {
+        width: 34px;
+        height: 24px;
+    }
+    
+    .discard-tile.opponent.reach-tile {
+        width: 34px;
+        height: 24px;
+    }
+    
     .discard-row {
         max-width: calc(24px * 6 + 2px * 5);
         gap: 2px;
@@ -1247,6 +1379,17 @@ header h1 {
         border-width: 2px;
     }
     
+    /* 高解像度画面でのリーチ牌調整 */
+    .discard-tile.reach-tile {
+        width: 54px;
+        height: 38px;
+    }
+    
+    .discard-tile.opponent.reach-tile {
+        width: 54px;
+        height: 38px;
+    }
+    
     .discard-row {
         max-width: calc(38px * 6 + 5px * 5);
         gap: 5px;
@@ -1322,6 +1465,12 @@ header h1 {
         color: #8B0000;
     }
     
+    .discard-tile.reach-tile {
+        border-color: #FF8C00;
+        background: #FFF8DC;
+        box-shadow: 0 0 0 2px #FF8C00;
+    }
+    
     .opponent-discard-area,
     .player-discard-area {
         border-width: 3px;
@@ -1348,6 +1497,22 @@ header h1 {
         border: 1px solid #333 !important;
         color: #000 !important;
         box-shadow: none !important;
+    }
+    
+    .discard-tile.reach-tile {
+        border: 2px solid #FF8C00 !important;
+        background: #FFF8DC !important;
+    }
+    
+    .discard-tile.reach-tile::after {
+        content: '[リーチ]';
+        position: absolute;
+        top: -10px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 0.6rem;
+        color: #FF8C00 !important;
+        font-weight: bold;
     }
     
     .opponent-discard-area,

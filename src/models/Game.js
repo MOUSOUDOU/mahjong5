@@ -162,6 +162,15 @@ class Game {
   }
 
   /**
+   * プレイヤーIDでプレイヤーを取得（エイリアス）
+   * @param {string} playerId - プレイヤーID
+   * @returns {Player|null} プレイヤー
+   */
+  getPlayerById(playerId) {
+    return this.getPlayer(playerId);
+  }
+
+  /**
    * 手番を次のプレイヤーに移す
    * 要件2.4に対応：手番を相手プレイヤーに移す
    */
@@ -214,7 +223,7 @@ class Game {
         name: player.name,
         handSize: player.getHandSize(),
         isRiichi: player.isRiichi,
-        discardedTiles: player.getDiscardedTilesDisplay()
+        discardedTiles: player.getDiscardedTilesDisplay() // リーチ牌情報を含む
       })),
       currentPlayerIndex: this.currentPlayerIndex,
       currentPlayerId: this.getCurrentPlayer()?.id || null,
@@ -265,6 +274,31 @@ class Game {
    */
   isDeckEmpty() {
     return this.deck.isEmpty();
+  }
+
+  /**
+   * リーチ宣言を処理
+   * @param {string} playerId - リーチを宣言するプレイヤーID
+   * @returns {boolean} リーチ宣言が成功したかどうか
+   */
+  handleReachDeclaration(playerId) {
+    const player = this.getPlayer(playerId);
+    
+    // プレイヤーが存在し、ゲームがプレイ中で、そのプレイヤーの手番であることを確認
+    if (!player || this.gameState !== 'playing' || !this.isPlayerTurn(playerId)) {
+      return false;
+    }
+    
+    // 既にリーチしている場合は宣言できない
+    if (player.isRiichi) {
+      return false;
+    }
+    
+    // リーチを宣言
+    player.declareReach();
+    this.updateLastActivity();
+    
+    return true;
   }
 
   /**

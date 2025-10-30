@@ -11,6 +11,7 @@ class Player {
     this.name = name;
     this.hand = [];           // 手牌（最大5枚）
     this.isRiichi = false;    // リーチ状態
+    this.reachTileIndex = -1; // リーチ牌のインデックス（-1は未設定）
     this.discardedTiles = []; // 捨て牌
   }
 
@@ -55,20 +56,25 @@ class Player {
   /**
    * 牌を捨てる
    * @param {Tile} tile - 捨てる牌
+   * @param {boolean} isReachTile - リーチ牌かどうか（デフォルト: false）
    */
-  discardTile(tile) {
+  discardTile(tile, isReachTile = false) {
     this.discardedTiles.push(tile);
+    if (isReachTile) {
+      this.reachTileIndex = this.discardedTiles.length - 1;
+    }
   }
 
   /**
    * 手牌から牌を捨てる（削除と捨て牌への追加を同時実行）
    * @param {string} tileId - 捨てる牌のID
+   * @param {boolean} isReachTile - リーチ牌かどうか（デフォルト: false）
    * @returns {Tile|null} 捨てられた牌
    */
-  discardTileFromHand(tileId) {
+  discardTileFromHand(tileId, isReachTile = false) {
     const tile = this.removeTileFromHand(tileId);
     if (tile) {
-      this.discardTile(tile);
+      this.discardTile(tile, isReachTile);
     }
     return tile;
   }
@@ -76,12 +82,13 @@ class Player {
   /**
    * インデックスで手牌から牌を捨てる
    * @param {number} index - 捨てる牌のインデックス
+   * @param {boolean} isReachTile - リーチ牌かどうか（デフォルト: false）
    * @returns {Tile|null} 捨てられた牌
    */
-  discardTileFromHandByIndex(index) {
+  discardTileFromHandByIndex(index, isReachTile = false) {
     const tile = this.removeTileFromHandByIndex(index);
     if (tile) {
-      this.discardTile(tile);
+      this.discardTile(tile, isReachTile);
     }
     return tile;
   }
@@ -90,6 +97,14 @@ class Player {
    * リーチを宣言
    */
   declareRiichi() {
+    this.isRiichi = true;
+  }
+
+  /**
+   * リーチを宣言（リーチ牌追跡用）
+   * 次に捨てる牌がリーチ牌としてマークされる
+   */
+  declareReach() {
     this.isRiichi = true;
   }
 
@@ -114,7 +129,10 @@ class Player {
    * @returns {string[]} 捨て牌の表示用文字列配列
    */
   getDiscardedTilesDisplay() {
-    return this.discardedTiles.map(tile => tile.toString());
+    return this.discardedTiles.map((tile, index) => ({
+      tile: tile.toString(),
+      isReachTile: index === this.reachTileIndex
+    }));
   }
 
   /**
@@ -140,6 +158,7 @@ class Player {
   reset() {
     this.hand = [];
     this.isRiichi = false;
+    this.reachTileIndex = -1;
     this.discardedTiles = [];
   }
 }

@@ -77,7 +77,7 @@ class GameEngine {
         ErrorHandler.log('warn', 'プレイヤーの手番ではない', { 
           gameId, 
           playerId, 
-          currentPlayer: game.getCurrentPlayerId() 
+          currentPlayer: game.getCurrentPlayer()?.id 
         });
         return { success: false, error: 'あなたの手番ではありません' };
       }
@@ -194,9 +194,10 @@ class GameEngine {
    * @param {string} gameId - ゲームID
    * @param {string} playerId - プレイヤーID
    * @param {string} tileId - 捨てる牌のID
+   * @param {Object} options - オプション（isReachTile等）
    * @returns {Object} 処理結果
    */
-  discardTile(gameId, playerId, tileId) {
+  discardTile(gameId, playerId, tileId, options = {}) {
     try {
       // 入力検証
       if (!gameId || typeof gameId !== 'string') {
@@ -235,7 +236,7 @@ class GameEngine {
           gameId, 
           playerId, 
           tileId,
-          currentPlayer: game.getCurrentPlayerId() 
+          currentPlayer: game.getCurrentPlayer()?.id 
         });
         return { success: false, error: 'あなたの手番ではありません' };
       }
@@ -271,7 +272,8 @@ class GameEngine {
         return { success: false, error: '指定された牌が手牌にありません' };
       }
 
-      const discardedTile = player.discardTileFromHand(tileId);
+      const { isReachTile = false } = options;
+      const discardedTile = player.discardTileFromHand(tileId, isReachTile);
       if (!discardedTile) {
         ErrorHandler.log('error', '牌を捨てることができない', { gameId, playerId, tileId });
         return { success: false, error: '牌を捨てることができませんでした' };
@@ -367,7 +369,7 @@ class GameEngine {
         ErrorHandler.log('warn', 'プレイヤーの手番ではない', { 
           gameId, 
           playerId, 
-          currentPlayer: game.getCurrentPlayerId() 
+          currentPlayer: game.getCurrentPlayer()?.id 
         });
         return { success: false, error: 'あなたの手番ではありません' };
       }
@@ -422,6 +424,173 @@ class GameEngine {
       ErrorHandler.log('error', 'リーチ宣言処理でエラー', { 
         gameId, 
         playerId, 
+        error: error.message,
+        stack: error.stack 
+      });
+      return { success: false, error: 'システムエラーが発生しました' };
+    }
+  }
+
+  /**
+   * リーチ宣言と牌破棄を同時に処理
+   * 要件3.1, 3.2, 5.1対応：リーチ宣言時の牌破棄を手番を移さずに実行
+   * @param {string} gameId - ゲームID
+   * @param {string} playerId - プレイヤーID
+   * @param {string} tileId - 捨てる牌のID
+   * @returns {Object} 処理結果
+   */
+  declareRiichiWithDiscard(gameId, playerId, tileId) {
+    try {
+      // 入力検証
+      if (!gameId || typeof gameId !== 'string') {
+        ErrorHandler.log('warn', '無効なゲームID', { gameId, playerId, tileId });
+        return { success: false, error: '無効なゲームIDです' };
+      }
+
+      if (!playerId || typeof playerId !== 'string') {
+        ErrorHandler.log('warn', '無効なプレイヤーID', { gameId, playerId, tileId });
+        return { success: false, error: '無効なプレイヤーIDです' };
+      }
+
+      if (!tileId || typeof tileId !== 'string') {
+        ErrorHandler.log('warn', '無効な牌ID', { gameId, playerId, tileId });
+        return { success: false, error: '無効な牌IDです' };
+      }
+
+      const game = this.getGame(gameId);
+      if (!game) {
+        ErrorHandler.log('warn', 'ゲームが見つからない', { gameId, playerId, tileId });
+        return { success: false, error: 'ゲームが見つかりません' };
+      }
+
+      if (!game.isPlayable()) {
+        ErrorHandler.log('warn', 'ゲームがプレイ不可能', { 
+          gameId, 
+          playerId, 
+          tileId,
+          gameState: game.gameState 
+        });
+        return { success: false, error: 'ゲームがプレイ可能な状態ではありません' };
+      }
+
+      if (!game.isPlayerTurn(playerId)) {
+        ErrorHandler.log('warn', 'プレイヤーの手番ではない', { 
+          gameId, 
+          playerId, 
+          tileId,
+          currentPlayer: game.getCurrentPlayer()?.id 
+        });
+        return { success: false, error: 'あなたの手番ではありません' };
+      }
+
+      const player = game.getPlayer(playerId);
+      if (!player) {
+        ErrorHandler.log('warn', 'プレイヤーが見つからない', { gameId, playerId, tileId });
+        return { success: false, error: 'プレイヤーが見つかりません' };
+      }
+
+      if (player.getHandSize() !== 5) {
+        ErrorHandler.log('warn', '手牌が5枚ではない', { 
+          gameId, 
+          playerId, 
+          tileId,
+          handSize: player.getHandSize() 
+        });
+        return { success: false, error: '手牌が5枚ではありません' };
+      }
+
+      if (player.isRiichi) {
+        ErrorHandler.log('warn', '既にリーチ宣言済み', { gameId, playerId, tileId });
+        return { success: false, error: '既にリーチを宣言しています' };
+      }
+
+      if (!player.hasTileInHand(tileId)) {
+        ErrorHandler.log('warn', '指定牌が手牌にない', { 
+          gameId, 
+          playerId, 
+          tileId,
+          hand: player.hand.map(t => t.id) 
+        });
+        return { success: false, error: '指定された牌が手牌にありません' };
+      }
+
+      // 牌を捨てた後の手牌でテンパイ判定を行う
+      const tileToDiscard = player.hand.find(t => t.id === tileId);
+      if (!tileToDiscard) {
+        ErrorHandler.log('warn', '捨てる牌が見つからない', { gameId, playerId, tileId });
+        return { success: false, error: '捨てる牌が見つかりません' };
+      }
+
+      // 一時的に牌を除いてテンパイ判定
+      const tempHand = player.hand.filter(t => t.id !== tileId);
+      const waitingTiles = HandEvaluator.checkTenpai(tempHand);
+      if (waitingTiles.length === 0) {
+        ErrorHandler.log('warn', 'テンパイしていない', { 
+          gameId, 
+          playerId,
+          tileId,
+          tempHand: tempHand.map(t => t.id) 
+        });
+        return { success: false, error: 'テンパイしていないためリーチできません' };
+      }
+
+      // 牌を破棄（リーチ牌として）
+      const discardedTile = player.discardTileFromHand(tileId, true);
+      if (!discardedTile) {
+        ErrorHandler.log('error', '牌を捨てることができない', { gameId, playerId, tileId });
+        return { success: false, error: '牌を捨てることができませんでした' };
+      }
+
+      // リーチ宣言
+      player.declareRiichi();
+
+      // ロン判定（相手プレイヤーがリーチしている場合）
+      const opponent = game.getOpponentPlayer(playerId);
+      if (opponent && opponent.isRiichi) {
+        const ronResult = this.checkRon(game, opponent, discardedTile);
+        if (ronResult.canRon) {
+          ErrorHandler.log('info', 'ロン上がり', { 
+            gameId, 
+            winner: opponent.id, 
+            discardedBy: playerId,
+            winningTile: discardedTile.id 
+          });
+          game.endGame(opponent.id);
+          return {
+            success: true,
+            discardedTile: discardedTile,
+            waitingTiles: waitingTiles,
+            gameEnded: true,
+            result: 'ron',
+            winner: opponent.id,
+            message: 'ロン！'
+          };
+        }
+      }
+
+      // 手番を次のプレイヤーに移す
+      game.nextTurn();
+
+      ErrorHandler.log('info', 'リーチ宣言と牌破棄成功', { 
+        gameId, 
+        playerId,
+        tileId: discardedTile.id,
+        waitingTiles: waitingTiles,
+        handSize: player.getHandSize()
+      });
+
+      return {
+        success: true,
+        discardedTile: discardedTile,
+        waitingTiles: waitingTiles,
+        message: 'リーチを宣言し、牌を捨てました'
+      };
+
+    } catch (error) {
+      ErrorHandler.log('error', 'リーチ宣言と牌破棄処理でエラー', { 
+        gameId, 
+        playerId, 
+        tileId,
         error: error.message,
         stack: error.stack 
       });

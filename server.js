@@ -96,7 +96,7 @@ app.get('/api/health', (req, res) => {
   try {
     const activeGames = gameEngine.getActiveGameCount();
     const waitingPlayers = waitingPlayers.size;
-    
+
     res.json({
       success: true,
       status: 'healthy',
@@ -198,7 +198,7 @@ function cleanupFinishedGame(gameId) {
     // プレイヤーマッピングをクリーンアップ
     game.players.forEach(player => {
       playerGameMap.delete(player.id);
-      
+
       // プレイヤーをSocketルームから削除
       const playerSocket = io.sockets.sockets.get(player.id);
       if (playerSocket) {
@@ -208,7 +208,7 @@ function cleanupFinishedGame(gameId) {
 
     // ゲームを削除
     gameEngine.removeGame(gameId);
-    
+
     ErrorHandler.log('info', 'ゲームクリーンアップ完了', { gameId });
   }
 }
@@ -222,7 +222,7 @@ function syncGameState(game) {
     const gameStateForPlayer = game.getGameStateForPlayer(player.id);
     io.to(player.id).emit('gameStateUpdate', gameStateForPlayer);
   });
-  
+
   // 手番タイマーを設定
   setTurnTimer(game);
 }
@@ -293,7 +293,7 @@ function handleTurnTimeout(gameId, playerId) {
     if (player.getHandSize() === 5) {
       const randomTile = player.hand[Math.floor(Math.random() * player.hand.length)];
       const result = gameEngine.discardTile(gameId, playerId, randomTile.id);
-      
+
       if (result.success) {
         // タイムアウトによる自動捨て牌を通知
         io.to(gameId).emit('autoDiscardTimeout', {
@@ -309,7 +309,7 @@ function handleTurnTimeout(gameId, playerId) {
         if (result.gameEnded && result.result === 'ron') {
           const winner = game.getPlayer(result.winner);
           const finalGameState = game.getGameState();
-          
+
           io.to(gameId).emit('gameEnded', {
             result: 'ron',
             winner: {
@@ -320,14 +320,14 @@ function handleTurnTimeout(gameId, playerId) {
             message: result.message,
             finalState: finalGameState
           });
-          
+
           cleanupFinishedGame(gameId);
         }
       }
     } else if (player.getHandSize() === 4) {
       // 手牌が4枚の場合、牌を引く
       const result = gameEngine.drawTile(gameId, playerId);
-      
+
       if (result.success) {
         // タイムアウトによる自動ドローを通知
         io.to(gameId).emit('autoDrawTimeout', {
@@ -351,7 +351,7 @@ function handleTurnTimeout(gameId, playerId) {
           } else if (result.result === 'tsumo') {
             const winner = game.getPlayer(result.winner);
             const finalGameState = game.getGameState();
-            
+
             io.to(gameId).emit('gameEnded', {
               result: 'tsumo',
               winner: {
@@ -368,10 +368,10 @@ function handleTurnTimeout(gameId, playerId) {
       }
     }
   } catch (error) {
-    ErrorHandler.log('error', 'タイムアウト処理でエラー', { 
-      gameId, 
-      playerId, 
-      error: error.message 
+    ErrorHandler.log('error', 'タイムアウト処理でエラー', {
+      gameId,
+      playerId,
+      error: error.message
     });
   }
 }
@@ -451,12 +451,12 @@ io.on('connection', (socket) => {
       }, 10000); // 10秒タイムアウト
 
     } catch (error) {
-      ErrorHandler.log('error', 'ゲーム参加処理でエラー', { 
-        playerId, 
+      ErrorHandler.log('error', 'ゲーム参加処理でエラー', {
+        playerId,
         error: error.message,
-        stack: error.stack 
+        stack: error.stack
       });
-      
+
       if (error.message.includes('タイムアウト')) {
         socket.emit('actionError', ErrorHandler.createErrorResponse(
           ERROR_TYPES.TIMEOUT_ERROR,
@@ -504,7 +504,7 @@ io.on('connection', (socket) => {
       if (result.success) {
         // タイマーをクリア
         clearTurnTimer(playerId);
-        
+
         // ゲーム状態を同期
         syncGameState(game);
 
@@ -512,7 +512,7 @@ io.on('connection', (socket) => {
         if (result.gameEnded) {
           if (result.result === 'draw') {
             ErrorHandler.log('info', '流局', { gameId });
-            
+
             // ゲーム終了処理
             const finalGameState = game.getGameState();
             io.to(gameId).emit('gameEnded', {
@@ -520,16 +520,16 @@ io.on('connection', (socket) => {
               message: result.message,
               finalState: finalGameState
             });
-            
+
             // ゲームをクリーンアップ
             cleanupFinishedGame(gameId);
           } else if (result.result === 'tsumo') {
             ErrorHandler.log('info', 'ツモ上がり', { gameId, winner: result.winner });
-            
+
             // 勝者情報を取得
             const winner = game.getPlayer(result.winner);
             const finalGameState = game.getGameState();
-            
+
             io.to(gameId).emit('gameEnded', {
               result: 'tsumo',
               winner: {
@@ -540,7 +540,7 @@ io.on('connection', (socket) => {
               message: result.message,
               finalState: finalGameState
             });
-            
+
             // ゲームをクリーンアップ
             cleanupFinishedGame(gameId);
           }
@@ -553,8 +553,8 @@ io.on('connection', (socket) => {
           });
         }
       } else {
-        ErrorHandler.log('warn', '牌を引く処理失敗', { 
-          playerId, 
+        ErrorHandler.log('warn', '牌を引く処理失敗', {
+          playerId,
           gameId,
           error: result.error,
           gameState: game ? game.gameState : 'unknown'
@@ -566,13 +566,13 @@ io.on('connection', (socket) => {
         ));
       }
     } catch (error) {
-      ErrorHandler.log('error', '牌を引く処理でエラー', { 
-        playerId, 
+      ErrorHandler.log('error', '牌を引く処理でエラー', {
+        playerId,
         gameId,
         error: error.message,
-        stack: error.stack 
+        stack: error.stack
       });
-      
+
       if (error.message.includes('タイムアウト')) {
         socket.emit('actionError', ErrorHandler.createErrorResponse(
           ERROR_TYPES.TIMEOUT_ERROR,
@@ -629,7 +629,7 @@ io.on('connection', (socket) => {
       if (result.success) {
         // タイマーをクリア
         clearTurnTimer(playerId);
-        
+
         // ゲーム状態を同期
         syncGameState(game);
 
@@ -642,11 +642,11 @@ io.on('connection', (socket) => {
         // ロン判定の結果処理
         if (result.gameEnded && result.result === 'ron') {
           ErrorHandler.log('info', 'ロン上がり', { gameId, winner: result.winner });
-          
+
           // 勝者情報を取得
           const winner = game.getPlayer(result.winner);
           const finalGameState = game.getGameState();
-          
+
           io.to(gameId).emit('gameEnded', {
             result: 'ron',
             winner: {
@@ -657,13 +657,13 @@ io.on('connection', (socket) => {
             message: result.message,
             finalState: finalGameState
           });
-          
+
           // ゲームをクリーンアップ
           cleanupFinishedGame(gameId);
         }
       } else {
-        ErrorHandler.log('warn', '牌を捨てる処理失敗', { 
-          playerId, 
+        ErrorHandler.log('warn', '牌を捨てる処理失敗', {
+          playerId,
           gameId,
           tileId,
           error: result.error,
@@ -676,14 +676,14 @@ io.on('connection', (socket) => {
         ));
       }
     } catch (error) {
-      ErrorHandler.log('error', '牌を捨てる処理でエラー', { 
-        playerId, 
+      ErrorHandler.log('error', '牌を捨てる処理でエラー', {
+        playerId,
         gameId,
         tileId,
         error: error.message,
-        stack: error.stack 
+        stack: error.stack
       });
-      
+
       if (error.message.includes('タイムアウト')) {
         socket.emit('actionError', ErrorHandler.createErrorResponse(
           ERROR_TYPES.TIMEOUT_ERROR,
@@ -739,14 +739,14 @@ io.on('connection', (socket) => {
           message: result.message
         });
 
-        ErrorHandler.log('info', 'リーチ宣言成功', { 
-          playerId, 
+        ErrorHandler.log('info', 'リーチ宣言成功', {
+          playerId,
           gameId,
-          waitingTiles: result.waitingTiles 
+          waitingTiles: result.waitingTiles
         });
       } else {
-        ErrorHandler.log('warn', 'リーチ宣言失敗', { 
-          playerId, 
+        ErrorHandler.log('warn', 'リーチ宣言失敗', {
+          playerId,
           gameId,
           error: result.error,
           gameState: game ? game.gameState : 'unknown'
@@ -758,13 +758,106 @@ io.on('connection', (socket) => {
         ));
       }
     } catch (error) {
-      ErrorHandler.log('error', 'リーチ宣言処理でエラー', { 
-        playerId, 
+      ErrorHandler.log('error', 'リーチ宣言処理でエラー', {
+        playerId,
         gameId,
         error: error.message,
-        stack: error.stack 
+        stack: error.stack
       });
-      
+
+      if (error.message.includes('タイムアウト')) {
+        socket.emit('actionError', ErrorHandler.createErrorResponse(
+          ERROR_TYPES.TIMEOUT_ERROR,
+          'リーチ宣言処理がタイムアウトしました'
+        ));
+      } else {
+        socket.emit('actionError', ErrorHandler.createErrorResponse(
+          ERROR_TYPES.CONNECTION_ERROR,
+          'リーチ宣言処理でエラーが発生しました'
+        ));
+      }
+    }
+  });
+
+  // リーチ宣言と牌の破棄を同時に処理（要件3.1, 3.2, 5.1対応）
+  ErrorHandler.wrapSocketHandler(socket, 'declareRiichiAndDiscard', async (data) => {
+    const playerId = socket.id;
+    const { tileId, isReachTile } = data;
+
+    // レート制限チェック
+    if (!ErrorHandler.checkRateLimit(playerId, 'declareRiichiAndDiscard', 10)) {
+      socket.emit('actionError', ErrorHandler.createErrorResponse(
+        ERROR_TYPES.RATE_LIMIT_ERROR,
+        'リーチ宣言が頻繁すぎます'
+      ));
+      return;
+    }
+
+    // 基本検証
+    const validation = ErrorHandler.validateGameOperation(playerId, playerGameMap, gameEngine);
+    if (!validation.success) {
+      socket.emit('actionError', validation);
+      return;
+    }
+
+    const { game, gameId } = validation;
+
+    ErrorHandler.log('info', 'リーチ宣言と牌破棄処理', { playerId, gameId, tileId, isReachTile });
+
+    try {
+      // タイムアウト付きでリーチ宣言と牌破棄処理を実行
+      const result = await ErrorHandler.withTimeout(async () => {
+        // リーチ宣言と牌破棄を同時に処理（手番を移さない）
+        return gameEngine.declareRiichiWithDiscard(gameId, playerId, tileId);
+      }, 5000);
+
+      if (result.success) {
+        // ゲーム状態を同期
+        syncGameState(game);
+
+        // 牌破棄の通知
+        io.to(gameId).emit('tileDiscarded', {
+          playerId: playerId,
+          discardedTile: result.discardedTile,
+          isReachTile: true // リーチ牌であることを明示
+        });
+
+        // リーチ宣言の通知
+        io.to(gameId).emit('riichiDeclared', {
+          playerId: playerId,
+          waitingTiles: result.waitingTiles,
+          message: result.message,
+          discardedTile: result.discardedTile
+        });
+
+        ErrorHandler.log('info', 'リーチ宣言と牌破棄成功', {
+          playerId,
+          gameId,
+          discardedTile: result.discardedTile,
+          waitingTiles: result.waitingTiles
+        });
+      } else {
+        ErrorHandler.log('warn', 'リーチ宣言と牌破棄失敗', {
+          playerId,
+          gameId,
+          error: result.error,
+          gameState: game ? game.gameState : 'unknown'
+        });
+        socket.emit('actionError', ErrorHandler.createDetailedErrorResponse(
+          ERROR_TYPES.INVALID_MOVE,
+          result.error,
+          { action: 'declareRiichiAndDiscard', gameId, tileId }
+        ));
+      }
+    } catch (error) {
+      ErrorHandler.log('error', 'リーチ宣言と牌破棄処理でエラー', {
+        playerId,
+        gameId,
+        tileId,
+        error: error.message,
+        stack: error.stack
+      });
+
       if (error.message.includes('タイムアウト')) {
         socket.emit('actionError', ErrorHandler.createErrorResponse(
           ERROR_TYPES.TIMEOUT_ERROR,
@@ -833,32 +926,32 @@ io.on('connection', (socket) => {
     }
 
     const result = gameEngine.handlePlayerReconnection(gameId, playerId);
-    
+
     if (result.success) {
       // プレイヤーマッピングを復元
       playerGameMap.set(playerId, gameId);
-      
+
       // Socketルームに参加
       socket.join(gameId);
-      
+
       // 再接続成功を通知
       socket.emit('reconnectionSuccess', {
         gameState: result.gameState,
         message: result.message
       });
-      
+
       // 相手プレイヤーに再接続を通知
       socket.to(gameId).emit('playerReconnected', {
         playerId: playerId,
         message: 'プレイヤーが再接続しました'
       });
-      
+
       ErrorHandler.log('info', 'プレイヤー再接続成功', { playerId, gameId });
     } else {
       socket.emit('reconnectionFailed', {
         error: result.error
       });
-      
+
       ErrorHandler.log('warn', 'プレイヤー再接続失敗', { playerId, gameId, error: result.error });
     }
   });
@@ -913,12 +1006,12 @@ io.on('connection', (socket) => {
         });
       }
     } catch (error) {
-      ErrorHandler.log('error', '新しいゲーム開始処理でエラー', { 
-        playerId, 
+      ErrorHandler.log('error', '新しいゲーム開始処理でエラー', {
+        playerId,
         error: error.message,
-        stack: error.stack 
+        stack: error.stack
       });
-      
+
       socket.emit('actionError', ErrorHandler.createErrorResponse(
         ERROR_TYPES.CONNECTION_ERROR,
         '新しいゲームの開始に失敗しました'
@@ -934,7 +1027,7 @@ io.on('connection', (socket) => {
     try {
       // タイマーをクリア
       clearTurnTimer(playerId);
-      
+
       // ゲームから削除
       removePlayerFromGame(playerId);
     } catch (error) {
@@ -965,19 +1058,19 @@ const cleanupInterval = setInterval(() => {
 
 // グローバルエラーハンドリング
 process.on('uncaughtException', (error) => {
-  ErrorHandler.log('error', 'キャッチされていない例外', { 
-    error: error.message, 
+  ErrorHandler.log('error', 'キャッチされていない例外', {
+    error: error.message,
     stack: error.stack,
     pid: process.pid
   });
-  
+
   // 重大なエラーの場合はプロセスを終了
   console.error('重大なエラーが発生しました。プロセスを終了します。');
   process.exit(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  ErrorHandler.log('error', 'ハンドルされていないPromise拒否', { 
+  ErrorHandler.log('error', 'ハンドルされていないPromise拒否', {
     reason: reason?.toString() || 'unknown',
     promise: promise?.toString() || 'unknown',
     pid: process.pid
@@ -992,24 +1085,24 @@ function gracefulShutdown(signal) {
     console.log('既にシャットダウン処理中です...');
     return;
   }
-  
+
   isShuttingDown = true;
   console.log(`${signal}を受信しました。サーバーを終了します...`);
   ErrorHandler.log('info', `${signal}を受信しました。サーバーを終了します。`);
-  
+
   // クリーンアップ処理のintervalを停止
   clearInterval(cleanupInterval);
-  
+
   // タイムアウトを設定（5秒後に強制終了）
   const forceExitTimeout = setTimeout(() => {
     console.error('強制終了します');
     process.exit(1);
   }, 5000);
-  
+
   // サーバーを閉じる
   server.close((err) => {
     clearTimeout(forceExitTimeout);
-    
+
     if (err) {
       console.error('サーバー終了時にエラーが発生しました:', err);
       ErrorHandler.log('error', 'サーバー終了時にエラー', { error: err.message });
@@ -1020,7 +1113,7 @@ function gracefulShutdown(signal) {
       process.exit(0);
     }
   });
-  
+
   // 新しい接続を拒否
   server.closeAllConnections?.();
 }
