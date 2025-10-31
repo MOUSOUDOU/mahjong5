@@ -119,19 +119,19 @@ class GameEngine {
       player.addTileToHand(drawnTile);
       player.lastDrawnTile = drawnTile; // 引いた牌を記録（リーチ後制限用）
 
-      // ツモ上がりの判定（要件4.1）
-      if (player.isRiichi && HandEvaluator.checkWinningHand(player.hand)) {
-        ErrorHandler.log('info', 'ツモ上がり', { gameId, playerId });
-        game.endGame(playerId);
-        return {
-          success: true,
-          tile: drawnTile,
-          gameEnded: true,
-          result: 'tsumo',
-          winner: playerId,
-          message: 'ツモ！'
-        };
-      }
+      // ツモ上がりの判定（要件4.1）- 自動上がりは行わず、クライアント側でボタン表示
+      // if (player.isRiichi && HandEvaluator.checkWinningHand(player.hand)) {
+      //   ErrorHandler.log('info', 'ツモ上がり', { gameId, playerId });
+      //   game.endGame(playerId);
+      //   return {
+      //     success: true,
+      //     tile: drawnTile,
+      //     gameEnded: true,
+      //     result: 'tsumo',
+      //     winner: playerId,
+      //     message: 'ツモ！'
+      //   };
+      // }
 
       ErrorHandler.log('debug', '自動牌引き処理成功', { 
         gameId, 
@@ -243,19 +243,19 @@ class GameEngine {
         return this.autoDiscardForRiichi(game, player, drawnTile);
       }
 
-      // ツモ上がりの判定（要件4.1）
-      if (player.isRiichi && HandEvaluator.checkWinningHand(player.hand)) {
-        ErrorHandler.log('info', 'ツモ上がり', { gameId, playerId });
-        game.endGame(playerId);
-        return {
-          success: true,
-          tile: drawnTile,
-          gameEnded: true,
-          result: 'tsumo',
-          winner: playerId,
-          message: 'ツモ！'
-        };
-      }
+      // ツモ上がりの判定（要件4.1）- 自動上がりは行わず、クライアント側でボタン表示
+      // if (player.isRiichi && HandEvaluator.checkWinningHand(player.hand)) {
+      //   ErrorHandler.log('info', 'ツモ上がり', { gameId, playerId });
+      //   game.endGame(playerId);
+      //   return {
+      //     success: true,
+      //     tile: drawnTile,
+      //     gameEnded: true,
+      //     result: 'tsumo',
+      //     winner: playerId,
+      //     message: 'ツモ！'
+      //   };
+      // }
 
       ErrorHandler.log('debug', '牌を引く処理成功', { 
         gameId, 
@@ -407,28 +407,28 @@ class GameEngine {
         return { success: false, error: '牌を捨てることができませんでした' };
       }
 
-      // ロン判定（相手プレイヤーがリーチしている場合）
-      const opponent = game.getOpponentPlayer(playerId);
-      if (opponent && opponent.isRiichi) {
-        const ronResult = this.checkRon(game, opponent, discardedTile);
-        if (ronResult.canRon) {
-          ErrorHandler.log('info', 'ロン上がり', { 
-            gameId, 
-            winner: opponent.id, 
-            discardedBy: playerId,
-            winningTile: discardedTile.id 
-          });
-          game.endGame(opponent.id);
-          return {
-            success: true,
-            discardedTile: discardedTile,
-            gameEnded: true,
-            result: 'ron',
-            winner: opponent.id,
-            message: 'ロン！'
-          };
-        }
-      }
+      // ロン判定（相手プレイヤーがリーチしている場合）- 自動ロンは行わず、クライアント側でボタン表示
+      // const opponent = game.getOpponentPlayer(playerId);
+      // if (opponent && opponent.isRiichi) {
+      //   const ronResult = this.checkRon(game, opponent, discardedTile);
+      //   if (ronResult.canRon) {
+      //     ErrorHandler.log('info', 'ロン上がり', { 
+      //       gameId, 
+      //       winner: opponent.id, 
+      //       discardedBy: playerId,
+      //       winningTile: discardedTile.id 
+      //     });
+      //     game.endGame(opponent.id);
+      //     return {
+      //       success: true,
+      //       discardedTile: discardedTile,
+      //       gameEnded: true,
+      //       result: 'ron',
+      //       winner: opponent.id,
+      //       message: 'ロン！'
+      //     };
+      //   }
+      // }
 
       // 手番を次のプレイヤーに移す（要件2.4）
       game.nextTurn();
@@ -672,29 +672,29 @@ class GameEngine {
       // リーチ宣言
       player.declareRiichi();
 
-      // ロン判定（相手プレイヤーがリーチしている場合）
-      const opponent = game.getOpponentPlayer(playerId);
-      if (opponent && opponent.isRiichi) {
-        const ronResult = this.checkRon(game, opponent, discardedTile);
-        if (ronResult.canRon) {
-          ErrorHandler.log('info', 'ロン上がり', { 
-            gameId, 
-            winner: opponent.id, 
-            discardedBy: playerId,
-            winningTile: discardedTile.id 
-          });
-          game.endGame(opponent.id);
-          return {
-            success: true,
-            discardedTile: discardedTile,
-            waitingTiles: waitingTiles,
-            gameEnded: true,
-            result: 'ron',
-            winner: opponent.id,
-            message: 'ロン！'
-          };
-        }
-      }
+      // ロン判定（相手プレイヤーがリーチしている場合）- 自動ロンは行わず、クライアント側でボタン表示
+      // const opponent = game.getOpponentPlayer(playerId);
+      // if (opponent && opponent.isRiichi) {
+      //   const ronResult = this.checkRon(game, opponent, discardedTile);
+      //   if (ronResult.canRon) {
+      //     ErrorHandler.log('info', 'ロン上がり', { 
+      //       gameId, 
+      //       winner: opponent.id, 
+      //       discardedBy: playerId,
+      //       winningTile: discardedTile.id 
+      //     });
+      //     game.endGame(opponent.id);
+      //     return {
+      //       success: true,
+      //       discardedTile: discardedTile,
+      //       waitingTiles: waitingTiles,
+      //       gameEnded: true,
+      //       result: 'ron',
+      //       winner: opponent.id,
+      //       message: 'ロン！'
+      //     };
+      //   }
+      // }
 
       // 手番を次のプレイヤーに移す
       game.nextTurn();

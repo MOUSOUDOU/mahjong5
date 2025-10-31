@@ -196,6 +196,12 @@ class Game {
    * @param {string} winnerId - 勝者のプレイヤーID
    */
   endGame(winnerId = null) {
+    // ゲーム終了時に各プレイヤーの手牌を保存
+    this.finalHandStates = {};
+    this.players.forEach(player => {
+      this.finalHandStates[player.id] = [...player.hand]; // 手牌をコピーして保存
+    });
+    
     this.gameState = 'finished';
     if (winnerId) {
       this.winner = this.getPlayer(winnerId);
@@ -245,8 +251,14 @@ class Game {
     const player = this.getPlayer(playerId);
     
     if (player) {
-      gameState.playerHand = player.getHandDisplay();
-      gameState.playerHandTiles = player.hand; // 実際のTileオブジェクト
+      // ゲーム終了後は保存された手牌を使用、それ以外は現在の手牌を使用
+      if (this.gameState === 'finished' && this.finalHandStates && this.finalHandStates[playerId]) {
+        gameState.playerHandTiles = this.finalHandStates[playerId];
+        gameState.playerHand = this.finalHandStates[playerId].map(tile => tile.toString());
+      } else {
+        gameState.playerHand = player.getHandDisplay();
+        gameState.playerHandTiles = player.hand; // 実際のTileオブジェクト
+      }
     }
     
     return gameState;

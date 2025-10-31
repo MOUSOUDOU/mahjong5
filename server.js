@@ -992,6 +992,7 @@ io.on('connection', (socket) => {
             name: player.name
           },
           winningTile: player.lastDrawnTile,
+          winningHand: [...player.hand], // 上がり形の手牌を保存
           message: 'ツモ！'
         };
 
@@ -1046,6 +1047,9 @@ io.on('connection', (socket) => {
         }
 
         // ロン上がり成功
+        // ロンの場合は相手の捨て牌を手牌に加えて完成形にする
+        const completeHand = [...player.hand, lastDiscardedTile];
+        
         game.endGame(playerId);
         winResult = {
           result: 'ron',
@@ -1054,6 +1058,7 @@ io.on('connection', (socket) => {
             name: player.name
           },
           winningTile: lastDiscardedTile,
+          winningHand: completeHand, // 上がり形の手牌を保存（ロン牌含む）
           message: 'ロン！'
         };
 

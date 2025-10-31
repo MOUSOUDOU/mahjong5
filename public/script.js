@@ -91,15 +91,29 @@ socket.on('tileDiscarded', (data) => {
         if (currentGameState) {
             const player = currentGameState.players.find(p => p.id === playerId);
             const isMyTurn = currentGameState.players[currentGameState.currentPlayerIndex]?.id === playerId;
+            console.log('牌が捨てられた後の上がり判定チェック:', {
+                playerId: player?.id,
+                isMyTurn,
+                isRiichi: player?.isRiichi
+            });
             updateWinningButtons(currentGameState, isMyTurn);
         }
-    }, 100);
+    }, 200); // 少し長めの遅延でゲーム状態更新を確実に待つ
 });
 
 socket.on('riichiDeclared', (data) => {
     console.log('リーチが宣言されました:', data);
     const message = data.playerId === playerId ? 'リーチを宣言しました' : '相手がリーチを宣言しました';
     showMessage(message);
+    
+    // リーチ宣言後、ゲーム状態更新を待ってボタン状態を更新
+    setTimeout(() => {
+        if (currentGameState) {
+            const player = currentGameState.players.find(p => p.id === playerId);
+            const isMyTurn = currentGameState.players[currentGameState.currentPlayerIndex]?.id === playerId;
+            updateWinningButtons(currentGameState, isMyTurn);
+        }
+    }, 200);
 });
 
 socket.on('gameWon', (data) => {
@@ -125,15 +139,43 @@ socket.on('gameStarted', (gameData) => {
 socket.on('gameEnded', (result) => {
     console.log('ゲームが終了しました:', result);
 
+    // 上がり宣言ボタンを非表示にする
+    hideWinningButtons();
+
     // 最終ゲーム状態を更新
     if (result.finalState) {
+        // ゲーム終了メッセージを表示
+        const winnerName = result.winner ? 
+            (result.winner.id === playerId ? 'あなた' : result.winner.name) : 
+            '引き分け';
+        const endMessage = result.winner ? 
+            `${winnerName}の${result.result === 'tsumo' ? 'ツモ' : 'ロン'}上がり！` : 
+            '流局';
+        showMessage(endMessage, 5000);
+
+        // 最終ゲーム状態を表示（手牌を保持）
         updateGameDisplay(result.finalState);
+        
+        // 上がり形の手牌を設定（サーバーから送信された場合はそれを使用）
+        if (!result.winningHand && result.winner) {
+            const winner = result.winner;
+            const winnerPlayer = result.finalState.players.find(p => p.id === winner.id);
+            if (winnerPlayer) {
+                // 勝者の手牌を結果に追加
+                if (winner.id === playerId) {
+                    result.winningHand = result.finalState.playerHandTiles || [];
+                } else {
+                    // 相手が勝った場合は、相手の手牌を取得
+                    result.winningHand = winnerPlayer.hand || [];
+                }
+            }
+        }
     }
 
-    // 結果画面を表示
+    // 結果画面を表示（手牌を確認する時間を与える）
     setTimeout(() => {
         showGameResult(result);
-    }, 1000); // 1秒後に結果を表示（ゲーム状態の更新を確認するため）
+    }, 5000); // 5秒後に結果を表示（上がり形をしっかり確認する時間）
 });
 
 // プレイヤー切断通知を受信
@@ -1607,6 +1649,86 @@ function updateGameDisplay(gameState) {
     // 上がり判定は updateWinningButtons で処理される
 }
 
+function updateGameDisplay(gameState) {
+    console.log('ゲーム状態更新:', gameState);
+
+    const previousGameState = currentGameState;
+    currentGameState = gameState;
+
+    // プレイヤーIDを設定（初回のみ）
+    if (!playerId && gameState.players && gameState.players.length > 0) {
+        // Socket IDと一致するプレイヤーを探す
+        const socketId = socket.id;
+        const matchingPlayer = gameState.players.find(p => p.id === socketId);
+        if (matchingPlayer) {
+            playerId = socketId;
+            console.log('プレイヤーID設定:', playerId);
+        }
+    }
+
+    // プレイヤー情報の更新
+    const player = gameState.players.find(p => p.id === playerId);
+    const opponent = gameState.players.find(p => p.id !== playerId);
+
+    console.log('現在のプレイヤー:', player);
+    console.log('プレイヤー手牌データ:', gameState.playerHandTiles);
+
+    if (player) {
+        updatePlayerStatus(player, false);
+
+        // 手牌の表示（自分の手番で手牌が5枚の時のみクリック可能）
+        const isPlayerTurn = gameState.currentPlayerIndex === gameState.players.indexOf(player);
+        const playerHand = gameState.playerHandTiles || []; // 正しい手牌データを使用
+        console.log('表示する手牌:', playerHand);
+        const canDiscardTile = isPlayerTurn && playerHand.length === 5;
+
+        // 引いた牌の検出：前回より手牌が1枚増えた場合
+        let drawnTile = null;
+        if (previousGameState && previousGameState.playerHandTiles) {
+            const previousHandSize = previousGameState.playerHandTiles.length;
+            const currentHandSize = playerHand.length;
+
+            if (currentHandSize === previousHandSize + 1 && currentHandSize === 5) {
+                // 新しく追加された牌を引いた牌として特定
+                const previousTileIds = new Set(previousGameState.playerHandTiles.map(t => t.id));
+                drawnTile = playerHand.find(tile => !previousTileIds.has(tile.id));
+                console.log('引いた牌を検出:', drawnTile);
+            }
+        }
+
+        // 引いた牌が検出できない場合でも、5枚の時は最後の牌を引いた牌として扱う
+        if (!drawnTile && playerHand.length === 5 && isPlayerTurn) {
+            drawnTile = playerHand[playerHand.length - 1];
+            console.log('5枚時の引いた牌として扱う:', drawnTile);
+        }
+
+        displayPlayerHand(playerHand, canDiscardTile, drawnTile);
+    }
+
+    if (opponent) {
+        updatePlayerStatus(opponent, true);
+        displayOpponentHand(opponent.handSize); // 使用 handSize プロパティ
+    }
+
+    // 捨て牌の表示（新しいシステムとの統合）
+    updateDiscardDisplay(gameState);
+
+    // ゲーム情報の更新
+    updateRemainingTiles(gameState.remainingTiles);
+    updateTurnIndicator(gameState);
+
+    // 手番が変わった場合のアニメーション
+    if (previousGameState && previousGameState.currentPlayerIndex !== gameState.currentPlayerIndex) {
+        addGameStateAnimation();
+    }
+
+    // ボタンの状態更新
+    const isMyTurn = gameState.players[gameState.currentPlayerIndex]?.id === playerId;
+    updateButtonStates(gameState, isMyTurn);
+
+    // 上がり判定は updateWinningButtons で処理される
+}
+
 function updateButtonStates(gameState, isMyTurn) {
     const player = gameState.players.find(p => p.id === playerId);
 
@@ -1731,31 +1853,112 @@ function checkTenpaiAfterDiscard(hand, tileToDiscard) {
     return true; // 一時的に常にtrueを返す
 }
 
+/**
+ * 上がり宣言ボタンの状態を更新
+ * 要件4.1, 4.2に対応：ツモ・ロン判定とボタン表示制御
+ */
+function updateWinningButtons(gameState, isMyTurn) {
+    const player = gameState.players.find(p => p.id === playerId);
+    const playerHand = gameState.playerHandTiles || [];
+    
+    if (!player) {
+        hideWinningButtons();
+        return;
+    }
+
+    // ツモ判定（要件4.1）
+    const canTsumo = checkCanTsumo(player, playerHand, isMyTurn);
+    
+    // ロン判定（要件4.2）
+    const canRon = checkCanRon(player, gameState, isMyTurn);
+    
+    console.log('上がり判定:', {
+        playerId: player.id,
+        isMyTurn,
+        isRiichi: player.isRiichi,
+        handSize: playerHand.length,
+        canTsumo,
+        canRon
+    });
+
+    showWinningOptions(canTsumo, canRon);
+}
+
+/**
+ * ツモ上がりが可能かチェック
+ * 要件4.1：リーチ状態のプレイヤーが引いた牌で完成形になった時
+ */
+function checkCanTsumo(player, playerHand, isMyTurn) {
+    // 条件チェック
+    if (!isMyTurn || !player.isRiichi || playerHand.length !== 5) {
+        return false;
+    }
+
+    // 5枚の手牌が完成形かチェック
+    return checkWinningHand(playerHand);
+}
+
+/**
+ * ロン上がりが可能かチェック
+ * 要件4.2：リーチ状態のプレイヤーの待ち牌を相手が捨てた時
+ */
+function checkCanRon(player, gameState, isMyTurn) {
+    // 自分の手番の時はロンできない
+    if (isMyTurn || !player.isRiichi) {
+        return false;
+    }
+
+    // 手牌が4枚でない場合はロンできない
+    const playerHand = gameState.playerHandTiles || [];
+    if (playerHand.length !== 4) {
+        return false;
+    }
+
+    // 相手が最後に捨てた牌を取得
+    const opponent = gameState.players.find(p => p.id !== playerId);
+    if (!opponent || !opponent.discardedTiles || opponent.discardedTiles.length === 0) {
+        return false;
+    }
+
+    const lastDiscardedTile = opponent.discardedTiles[opponent.discardedTiles.length - 1];
+    
+    // 待ち牌を計算
+    const waitingTiles = checkTenpai(playerHand);
+    
+    console.log('ロン判定:', {
+        playerHand: playerHand.map(t => getTileDisplayText(t)),
+        lastDiscardedTile: typeof lastDiscardedTile === 'string' ? lastDiscardedTile : getTileDisplayText(lastDiscardedTile),
+        waitingTiles: waitingTiles.map(t => getTileDisplayText(t))
+    });
+    
+    // 最後に捨てられた牌が待ち牌に含まれているかチェック
+    return waitingTiles.some(waitingTile => {
+        return isSameTile(waitingTile, lastDiscardedTile);
+    });
+}
+
 // アクションボタンのイベントリスナー
 // 牌を引くボタンは削除（自動牌引きのため）
 
 riichiBtn.addEventListener('click', () => {
-    if (!riichiBtn.disabled) {
-        // リーチ宣言時は選択された牌を捨てる必要がある
-        if (!selectedTile) {
-            showError('リーチを宣言するには捨てる牌を選択してください');
-            return;
-        }
-
+    if (!riichiBtn.disabled && selectedTile) {
         // リーチ宣言と牌の破棄を同時に実行
+        const selectedTileId = selectedTile.id; // 先に保存
         if (safeEmit('declareRiichiAndDiscard', { 
-            tileId: selectedTile.id,
+            tileId: selectedTileId,
             isReachTile: true // リーチ牌として捨てることを明示
         })) {
             riichiBtn.disabled = true; // 重複送信を防ぐ
+            
+            console.log('リーチ宣言と牌の破棄を送信しました:', selectedTileId);
             
             // 選択状態をクリア
             clearTileSelection();
             
             // 一時的にボタンを無効化（牌を引くボタンは削除済み）
-            
-            console.log('リーチ宣言と牌の破棄を送信しました:', selectedTile.id);
         }
+    } else if (!selectedTile) {
+        showError('リーチを宣言するには捨てる牌を選択してください');
     }
 });
 
@@ -1803,6 +2006,12 @@ function showGameResult(result) {
     const resultMessage = document.getElementById('result-message');
     const newGameBtn = document.getElementById('new-game-btn');
 
+    // 既存の上がり形表示エリアを削除
+    const existingWinningHand = gameResult.querySelector('.winning-hand-display');
+    if (existingWinningHand) {
+        existingWinningHand.remove();
+    }
+
     // 結果に応じてタイトルとメッセージを設定
     if (result.winner) {
         const isWinner = result.winner.id === playerId;
@@ -1829,6 +2038,12 @@ function showGameResult(result) {
                 const tileText = result.winningTile ? getTileDisplayText(result.winningTile) : '不明';
                 resultMessage.textContent = `相手がロンで上がりました\n上がり牌: ${tileText}`;
             }
+        }
+
+        // 上がり形を表示
+        if (result.winningHand && result.winningHand.length > 0) {
+            const winningHandDisplay = createWinningHandDisplay(result.winningHand, result.winningTile, isWinner);
+            gameResult.querySelector('.result-content').insertBefore(winningHandDisplay, newGameBtn);
         }
     } else if (result.result === 'draw') {
         // 流局の場合
@@ -1863,6 +2078,160 @@ function showGameResult(result) {
         // 新しいゲームを要求
         safeEmit('requestNewGame');
     };
+}
+
+/**
+ * 上がり形表示エリアを作成
+ */
+function createWinningHandDisplay(winningHand, winningTile, isWinner) {
+    const container = document.createElement('div');
+    container.className = 'winning-hand-display';
+    container.style.cssText = `
+        margin: 20px 0;
+        padding: 15px;
+        background-color: rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        border: 2px solid ${isWinner ? '#4caf50' : '#f44336'};
+    `;
+
+    // タイトル
+    const title = document.createElement('h3');
+    title.textContent = isWinner ? 'あなたの上がり形' : '相手の上がり形';
+    title.style.cssText = `
+        margin: 0 0 10px 0;
+        color: ${isWinner ? '#4caf50' : '#f44336'};
+        font-size: 16px;
+        text-align: center;
+    `;
+    container.appendChild(title);
+
+    // 手牌表示エリア
+    const handArea = document.createElement('div');
+    handArea.className = 'winning-hand-tiles';
+    handArea.style.cssText = `
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 5px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+    `;
+
+    // 手牌をソートして表示
+    const sortedHand = sortTilesForDisplay(winningHand);
+    sortedHand.forEach((tile, index) => {
+        const tileElement = createResultTileElement(tile, winningTile);
+        handArea.appendChild(tileElement);
+    });
+
+    container.appendChild(handArea);
+
+    // 完成形の説明
+    const explanation = document.createElement('div');
+    explanation.style.cssText = `
+        text-align: center;
+        font-size: 14px;
+        color: #ccc;
+        margin-top: 10px;
+    `;
+    
+    const handType = analyzeWinningHandType(sortedHand);
+    explanation.textContent = `完成形: ${handType}`;
+    container.appendChild(explanation);
+
+    return container;
+}
+
+/**
+ * 結果画面用の牌要素を作成
+ */
+function createResultTileElement(tile, winningTile) {
+    const tileElement = document.createElement('div');
+    tileElement.className = 'result-tile';
+    
+    // 上がり牌かどうかを判定
+    const isWinningTile = winningTile && 
+        tile.suit === winningTile.suit && 
+        tile.value === winningTile.value;
+    
+    tileElement.style.cssText = `
+        width: 30px;
+        height: 42px;
+        background-color: ${isWinningTile ? '#ffd700' : '#f5f5f5'};
+        border: 2px solid ${isWinningTile ? '#ff6b35' : '#333'};
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        font-size: 14px;
+        color: #333;
+        position: relative;
+        ${isWinningTile ? 'box-shadow: 0 0 10px rgba(255, 107, 53, 0.5);' : ''}
+    `;
+
+    tileElement.textContent = getTileDisplayText(tile);
+
+    // 上がり牌にマークを追加
+    if (isWinningTile) {
+        const mark = document.createElement('div');
+        mark.style.cssText = `
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            width: 16px;
+            height: 16px;
+            background-color: #ff6b35;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            color: white;
+            font-weight: bold;
+        `;
+        mark.textContent = '★';
+        tileElement.appendChild(mark);
+    }
+
+    return tileElement;
+}
+
+/**
+ * 上がり形のタイプを分析
+ */
+function analyzeWinningHandType(tiles) {
+    if (!tiles || tiles.length !== 5) {
+        return '不明';
+    }
+
+    // 牌の種類と枚数を集計
+    const tileCount = {};
+    tiles.forEach(tile => {
+        const key = `${tile.suit}_${tile.value}`;
+        tileCount[key] = (tileCount[key] || 0) + 1;
+    });
+
+    const counts = Object.values(tileCount).sort((a, b) => b - a);
+    
+    // 3枚 + 2枚（刻子 + 対子）
+    if (counts.length === 2 && counts[0] === 3 && counts[1] === 2) {
+        return '刻子 + 対子';
+    }
+
+    // 順子 + 対子の可能性をチェック
+    const bambooTiles = tiles.filter(t => t.suit === 'bamboo').map(t => t.value).sort((a, b) => a - b);
+    if (bambooTiles.length >= 3) {
+        // 連続する3枚があるかチェック
+        for (let i = 0; i <= bambooTiles.length - 3; i++) {
+            if (bambooTiles[i + 1] === bambooTiles[i] + 1 && 
+                bambooTiles[i + 2] === bambooTiles[i] + 2) {
+                return '順子 + 対子';
+            }
+        }
+    }
+
+    return '特殊形';
 }
 
 function updateTurnIndicator(gameState) {
@@ -2121,6 +2490,12 @@ function showWinningOptions(canTsumo, canRon) {
         tsumoBtn.onclick = () => {
             if (safeEmit('declareWin', { type: 'tsumo' })) {
                 tsumoBtn.disabled = true;
+                // 上がり宣言後は手牌を固定表示
+                const playerHand = currentGameState?.playerHandTiles || [];
+                if (playerHand.length > 0) {
+                    displayPlayerHand(playerHand, false); // クリック不可にして固定表示
+                }
+                showMessage('ツモ宣言しました！', 3000);
                 console.log('ツモ宣言を送信しました');
             }
         };
@@ -2134,6 +2509,12 @@ function showWinningOptions(canTsumo, canRon) {
         ronBtn.onclick = () => {
             if (safeEmit('declareWin', { type: 'ron' })) {
                 ronBtn.disabled = true;
+                // 上がり宣言後は手牌を固定表示
+                const playerHand = currentGameState?.playerHandTiles || [];
+                if (playerHand.length > 0) {
+                    displayPlayerHand(playerHand, false); // クリック不可にして固定表示
+                }
+                showMessage('ロン宣言しました！', 3000);
                 console.log('ロン宣言を送信しました');
             }
         };
@@ -2446,3 +2827,168 @@ style.textContent = `
     }
 `;
 document.head.appendChild(style);
+/**
+ *
+ 5枚の手牌が完成形かチェック（簡易実装）
+ */
+function checkWinningHand(tiles) {
+    if (!tiles || tiles.length !== 5) {
+        return false;
+    }
+
+    // 牌の種類と枚数を集計
+    const tileCount = {};
+    tiles.forEach(tile => {
+        const key = `${tile.suit}_${tile.value}`;
+        tileCount[key] = (tileCount[key] || 0) + 1;
+    });
+
+    const counts = Object.values(tileCount).sort((a, b) => b - a);
+    
+    // パターン1: 3枚 + 2枚（刻子 + 対子）
+    if (counts.length === 2 && counts[0] === 3 && counts[1] === 2) {
+        console.log('完成形判定: 刻子+対子パターン');
+        return true;
+    }
+
+    // パターン2: 順子 + 対子（より複雑な判定が必要）
+    if (counts.length >= 3) {
+        // 簡易的な順子判定
+        const bambooTiles = tiles.filter(t => t.suit === 'bamboo').map(t => t.value).sort((a, b) => a - b);
+        if (bambooTiles.length >= 3) {
+            // 連続する3枚があるかチェック
+            for (let i = 0; i <= bambooTiles.length - 3; i++) {
+                if (bambooTiles[i + 1] === bambooTiles[i] + 1 && 
+                    bambooTiles[i + 2] === bambooTiles[i] + 2) {
+                    
+                    // 残りの牌が対子かチェック
+                    const sequenceTiles = [bambooTiles[i], bambooTiles[i + 1], bambooTiles[i + 2]];
+                    const remainingTiles = tiles.filter(tile => {
+                        if (tile.suit !== 'bamboo') return true;
+                        const index = sequenceTiles.indexOf(tile.value);
+                        if (index !== -1) {
+                            sequenceTiles.splice(index, 1);
+                            return false;
+                        }
+                        return true;
+                    });
+                    
+                    if (remainingTiles.length === 2 && 
+                        remainingTiles[0].suit === remainingTiles[1].suit &&
+                        remainingTiles[0].value === remainingTiles[1].value) {
+                        console.log('完成形判定: 順子+対子パターン');
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+/**
+ * 4枚の手牌のテンパイ判定（簡易実装）
+ */
+function checkTenpai(tiles) {
+    if (!tiles || tiles.length !== 4) {
+        return [];
+    }
+
+    const waitingTiles = [];
+    
+    // 全ての可能な牌を試して完成形になるかチェック
+    const possibleTiles = getAllPossibleTiles();
+    
+    for (const testTile of possibleTiles) {
+        const testHand = [...tiles, testTile];
+        if (checkWinningHand(testHand)) {
+            waitingTiles.push(testTile);
+        }
+    }
+    
+    return waitingTiles;
+}
+
+/**
+ * 全ての可能な牌を生成
+ */
+function getAllPossibleTiles() {
+    const tiles = [];
+    
+    // 索子1-9
+    for (let value = 1; value <= 9; value++) {
+        tiles.push({ suit: 'bamboo', value: value });
+    }
+    
+    // 字牌
+    const honorValues = ['white', 'green', 'red'];
+    for (const value of honorValues) {
+        tiles.push({ suit: 'honor', value: value });
+    }
+    
+    return tiles;
+}
+
+/**
+ * 2つの牌が同じかチェック
+ */
+function isSameTile(tile1, tile2) {
+    if (typeof tile2 === 'string') {
+        // 文字列形式の場合は表示テキストで比較
+        return getTileDisplayText(tile1) === tile2;
+    }
+    
+    return tile1.suit === tile2.suit && tile1.value === tile2.value;
+}
+
+/**
+ * 上がり宣言ボタンを表示/非表示
+ */
+function showWinningOptions(canTsumo, canRon) {
+    if (canTsumo) {
+        tsumoBtn.style.display = 'inline-block';
+        tsumoBtn.disabled = false;
+        tsumoBtn.onclick = () => {
+            if (safeEmit('declareWin', { type: 'tsumo' })) {
+                tsumoBtn.disabled = true;
+                // 上がり宣言後は手牌を固定表示
+                const playerHand = currentGameState?.playerHandTiles || [];
+                if (playerHand.length > 0) {
+                    displayPlayerHand(playerHand, false); // クリック不可にして固定表示
+                }
+                showMessage('ツモ宣言しました！', 3000);
+                console.log('ツモ宣言を送信しました');
+            }
+        };
+    } else {
+        tsumoBtn.style.display = 'none';
+    }
+
+    if (canRon) {
+        ronBtn.style.display = 'inline-block';
+        ronBtn.disabled = false;
+        ronBtn.onclick = () => {
+            if (safeEmit('declareWin', { type: 'ron' })) {
+                ronBtn.disabled = true;
+                // 上がり宣言後は手牌を固定表示
+                const playerHand = currentGameState?.playerHandTiles || [];
+                if (playerHand.length > 0) {
+                    displayPlayerHand(playerHand, false); // クリック不可にして固定表示
+                }
+                showMessage('ロン宣言しました！', 3000);
+                console.log('ロン宣言を送信しました');
+            }
+        };
+    } else {
+        ronBtn.style.display = 'none';
+    }
+}
+
+/**
+ * 上がり宣言ボタンを非表示
+ */
+function hideWinningButtons() {
+    tsumoBtn.style.display = 'none';
+    ronBtn.style.display = 'none';
+}
