@@ -101,6 +101,15 @@
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
+    <!-- モジュールファイルを依存関係順に読み込み -->
+    <script src="js/ErrorHandler.js"></script>
+    <script src="js/SocketManager.js"></script>
+    <script src="js/GameStateManager.js"></script>
+    <script src="js/TileManager.js"></script>
+    <script src="js/DiscardDisplayManager.js"></script>
+    <script src="js/WinningManager.js"></script>
+    <script src="js/UIManager.js"></script>
+    <!-- メインスクリプト（最後に読み込み） -->
     <script src="script.js"></script>
 </body>
 </html>
