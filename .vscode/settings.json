@@ -2,7 +2,7 @@
     "kiroAgent.configureMCP": "Disabled",
     "locale": "ja",
     "editor.fontFamily": "PlemolJP, 'BIZ UDゴシック', 'BIZ UDPGothic', 'Yu Gothic UI', 'Meiryo UI', monospace",
-    "terminal.integrated.fontFamily": "'BIZ UDPGothic', 'Yu Gothic UI', 'Meiryo UI', monospace",
+    "terminal.integrated.fontFamily": "PlemolJP,'BIZ UDPGothic', 'Yu Gothic UI', 'Meiryo UI', monospace",
     "workbench.colorTheme": "Default Dark+",
     "files.autoGuessEncoding": true,
     "files.encoding": "utf8",

@@ -8,7 +8,7 @@ const gameScreen = document.querySelector('.game-screen');
 const playerHand = document.getElementById('player-hand');
 const opponentHand = document.getElementById('opponent-hand');
 const discardedTiles = document.getElementById('discarded-tiles');
-const drawBtn = document.getElementById('draw-btn');
+// 牌を引くボタンは削除（自動牌引きのため）
 const riichiBtn = document.getElementById('riichi-btn');
 const ronBtn = document.getElementById('ron-btn');
 const tsumoBtn = document.getElementById('tsumo-btn');
@@ -77,8 +77,9 @@ socket.on('gameError', (error) => {
 });
 
 // アクション結果の受信
-socket.on('tileDrawn', (data) => {
-    console.log('牌を引きました:', data);
+socket.on('autoTileDraw', (data) => {
+    console.log('自動牌引き:', data);
+    showMessage(data.message, 2000);
     // ゲーム状態は gameStateUpdate で更新される
 });
 
@@ -234,6 +235,18 @@ function getTileDisplayText(tile) {
 }
 
 function handleTileClick(tile, tileElement) {
+    // リーチ後の制限チェック（要件3.5, 7.4）
+    if (currentGameState) {
+        const player = currentGameState.players.find(p => p.id === playerId);
+        if (player && player.isRiichi && player.lastDrawnTile) {
+            // リーチ後は引いた牌以外選択不可
+            if (tile.id !== player.lastDrawnTile.id) {
+                showError('リーチ後は引いた牌以外を捨てることはできません');
+                return;
+            }
+        }
+    }
+
     // 既に選択されている牌がある場合は選択を解除
     if (selectedTile) {
         const previousSelected = document.querySelector('.tile.selected');
@@ -625,6 +638,10 @@ function displayPlayerHand(tiles, isClickable = false, drawnTile = null) {
         return;
     }
 
+    // リーチ状態の確認
+    const player = currentGameState?.players.find(p => p.id === playerId);
+    const isRiichi = player?.isRiichi || false;
+
     // 引いた牌がある場合は、それを除いて残りの牌をソート
     let handTiles = [...tiles];
     let separateDrawnTile = null;
@@ -651,8 +668,21 @@ function displayPlayerHand(tiles, isClickable = false, drawnTile = null) {
     const sortedTiles = sortTilesForDisplay(handTiles);
 
     sortedTiles.forEach(tile => {
-        const tileElement = createTileElement(tile, isClickable);
+        // リーチ後の制限チェック
+        let tileClickable = isClickable;
+        if (isRiichi && separateDrawnTile && tile.id !== separateDrawnTile.id) {
+            tileClickable = false; // リーチ後は引いた牌以外選択不可
+        }
+
+        const tileElement = createTileElement(tile, tileClickable);
         tileElement.classList.add('sorted-tile');
+        
+        // リーチ後の制限表示
+        if (isRiichi && !tileClickable) {
+            tileElement.classList.add('riichi-restricted');
+            tileElement.title = 'リーチ後は選択できません';
+        }
+        
         playerHand.appendChild(tileElement);
     });
 
@@ -664,9 +694,16 @@ function displayPlayerHand(tiles, isClickable = false, drawnTile = null) {
         separator.setAttribute('aria-hidden', 'true');
         playerHand.appendChild(separator);
 
-        // 引いた牌を表示
+        // 引いた牌を表示（リーチ後でも選択可能）
         const drawnTileElement = createTileElement(separateDrawnTile, isClickable);
         drawnTileElement.classList.add('drawn-tile');
+        
+        // リーチ後の引いた牌は強調表示
+        if (isRiichi) {
+            drawnTileElement.classList.add('riichi-drawable');
+            drawnTileElement.title = 'リーチ後はこの牌のみ選択可能';
+        }
+        
         drawnTileElement.setAttribute('aria-label', `引いた牌: ${getTileDisplayText(separateDrawnTile)}`);
         playerHand.appendChild(drawnTileElement);
     }
@@ -1574,8 +1611,7 @@ function updateButtonStates(gameState, isMyTurn) {
 
     const playerHand = gameState.playerHandTiles || []; // 正しい手牌データを使用
 
-    // 牌を引くボタン
-    drawBtn.disabled = !isMyTurn || playerHand.length >= 5;
+    // 牌を引くボタンは削除（自動牌引きのため）
 
     // リーチボタンの条件を修正
     // リーチは以下の条件をすべて満たす場合のみ有効:
@@ -1694,14 +1730,7 @@ function checkTenpaiAfterDiscard(hand, tileToDiscard) {
 }
 
 // アクションボタンのイベントリスナー
-drawBtn.addEventListener('click', () => {
-    if (!drawBtn.disabled) {
-        if (safeEmit('drawTile')) {
-            drawBtn.disabled = true; // 重複送信を防ぐ
-            clearTileSelection(); // 選択をリセット
-        }
-    }
-});
+// 牌を引くボタンは削除（自動牌引きのため）
 
 riichiBtn.addEventListener('click', () => {
     if (!riichiBtn.disabled) {
@@ -1721,8 +1750,7 @@ riichiBtn.addEventListener('click', () => {
             // 選択状態をクリア
             clearTileSelection();
             
-            // 一時的にボタンを無効化
-            drawBtn.disabled = true;
+            // 一時的にボタンを無効化（牌を引くボタンは削除済み）
             
             console.log('リーチ宣言と牌の破棄を送信しました:', selectedTile.id);
         }

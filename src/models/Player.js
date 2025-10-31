@@ -13,6 +13,7 @@ class Player {
     this.isRiichi = false;    // リーチ状態
     this.reachTileIndex = -1; // リーチ牌のインデックス（-1は未設定）
     this.discardedTiles = []; // 捨て牌
+    this.lastDrawnTile = null; // 最後に引いた牌（リーチ後制限用）
   }
 
   /**
@@ -160,6 +161,7 @@ class Player {
     this.isRiichi = false;
     this.reachTileIndex = -1;
     this.discardedTiles = [];
+    this.lastDrawnTile = null;
   }
 }
 

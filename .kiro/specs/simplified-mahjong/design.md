@@ -88,11 +88,14 @@ class GameEngine {
   // 牌を配る
   dealTiles(game)
   
-  // 牌を引く
-  drawTile(game, playerId)
+  // 自動牌引き（手番開始時）
+  autoDrawTile(game, playerId)
   
   // 牌を捨てる
   discardTile(game, playerId, tileId)
+  
+  // リーチ後の牌捨て制限チェック
+  validateRiichiDiscard(game, playerId, tileId)
   
   // リーチ宣言
   declareRiichi(game, playerId)
@@ -105,6 +108,44 @@ class GameEngine {
   
   // ロン判定
   checkRon(game, playerId, discardedTile)
+}
+```
+
+## ゲームフロー設計
+
+### 手番処理フロー
+
+```
+手番開始
+    ↓
+自動牌引き
+    ↓
+上がり判定 → [上がり] → ゲーム終了
+    ↓ [上がりでない]
+牌捨て選択待ち
+    ↓
+リーチ状態チェック
+    ↓
+[通常状態] → 任意の牌を選択可能
+    ↓
+[リーチ状態] → 引いた牌以外選択禁止
+    ↓
+牌捨て実行
+    ↓
+手番終了
+```
+
+### リーチ後の制限処理
+
+```javascript
+class RiichiConstraint {
+  // リーチ後の牌捨て制限
+  validateDiscard(player, selectedTileId, drawnTileId) {
+    if (player.isRiichi && selectedTileId !== drawnTileId) {
+      throw new Error('リーチ後は引いた牌以外を捨てることはできません');
+    }
+    return true;
+  }
 }
 ```
 
@@ -137,8 +178,7 @@ const GAME_STATES = {
 };
 
 const PLAYER_ACTIONS = {
-  DRAW: 'draw',           // 牌を引く
-  DISCARD: 'discard',     // 牌を捨てる
+  DISCARD: 'discard',     // 牌を捨てる（手動操作）
   RIICHI: 'riichi',       // リーチ宣言
   RON: 'ron',             // ロン宣言
   TSUMO: 'tsumo'          // ツモ宣言
@@ -214,7 +254,7 @@ const ERROR_TYPES = {
 │  あなたの手牌:                                           │
 │  [1] [2] [3] [4] [5]                                   │
 │                                                         │
-│  [牌を引く] [リーチ] [上がり]                            │
+│  [リーチ] [上がり]                                      │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -227,10 +267,11 @@ const ERROR_TYPES = {
 
 ### インタラクション
 
-1. **牌を引く**: ボタンクリックで山から1枚引く
-2. **牌を捨てる**: 手牌をクリックして選択・捨てる
+1. **自動牌引き**: 手番開始時に自動的に山から1枚引く
+2. **牌を捨てる**: 手牌をクリックして選択・捨てる（常に手動操作）
 3. **リーチ宣言**: テンパイ時にボタンが有効化
-4. **ロン宣言**: 相手の捨て牌で上がれる時にボタン表示
+4. **リーチ後制限**: リーチ状態では引いた牌以外の捨て牌選択を禁止
+5. **ロン宣言**: 相手の捨て牌で上がれる時にボタン表示
 
 ## セキュリティ考慮事項
 

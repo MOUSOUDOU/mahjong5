@@ -223,8 +223,74 @@ function syncGameState(game) {
     io.to(player.id).emit('gameStateUpdate', gameStateForPlayer);
   });
 
+  // 手番開始時の自動牌引き処理（要件7.1）
+  handleAutoDrawTile(game);
+
   // 手番タイマーを設定
   setTurnTimer(game);
+}
+
+/**
+ * 手番開始時の自動牌引き処理
+ * @param {Game} game - ゲーム
+ */
+function handleAutoDrawTile(game) {
+  if (!game.isPlayable()) {
+    return;
+  }
+
+  const currentPlayer = game.getCurrentPlayer();
+  if (!currentPlayer) {
+    return;
+  }
+
+  // 手牌が4枚の場合のみ自動牌引きを実行
+  if (currentPlayer.getHandSize() === 4) {
+    const result = gameEngine.autoDrawTile(game.gameId, currentPlayer.id);
+
+    if (result.success) {
+      // 自動牌引きの通知
+      io.to(game.gameId).emit('autoTileDraw', {
+        playerId: currentPlayer.id,
+        drawnTile: result.tile,
+        message: '自動的に牌を引きました'
+      });
+
+      // ゲーム終了の処理
+      if (result.gameEnded) {
+        if (result.result === 'draw') {
+          const finalGameState = game.getGameState();
+          io.to(game.gameId).emit('gameEnded', {
+            result: 'draw',
+            message: result.message,
+            finalState: finalGameState
+          });
+          cleanupFinishedGame(game.gameId);
+        } else if (result.result === 'tsumo') {
+          const winner = game.getPlayer(result.winner);
+          const finalGameState = game.getGameState();
+
+          io.to(game.gameId).emit('gameEnded', {
+            result: 'tsumo',
+            winner: {
+              id: winner.id,
+              name: winner.name
+            },
+            winningTile: result.tile,
+            message: result.message,
+            finalState: finalGameState
+          });
+          cleanupFinishedGame(game.gameId);
+        }
+      } else {
+        // ゲーム状態を再同期（自動牌引き後）
+        game.players.forEach(player => {
+          const gameStateForPlayer = game.getGameStateForPlayer(player.id);
+          io.to(player.id).emit('gameStateUpdate', gameStateForPlayer);
+        });
+      }
+    }
+  }
 }
 
 /**
@@ -471,121 +537,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 牌を引く処理（要件2.1）
-  ErrorHandler.wrapSocketHandler(socket, 'drawTile', async (data) => {
-    const playerId = socket.id;
-
-    // レート制限チェック
-    if (!ErrorHandler.checkRateLimit(playerId, 'drawTile', 30)) {
-      socket.emit('actionError', ErrorHandler.createErrorResponse(
-        ERROR_TYPES.RATE_LIMIT_ERROR,
-        '牌を引く操作が頻繁すぎます'
-      ));
-      return;
-    }
-
-    // 基本検証
-    const validation = ErrorHandler.validateGameOperation(playerId, playerGameMap, gameEngine);
-    if (!validation.success) {
-      socket.emit('actionError', validation);
-      return;
-    }
-
-    const { game, gameId } = validation;
-
-    ErrorHandler.log('info', '牌を引く処理', { playerId, gameId });
-
-    try {
-      // タイムアウト付きで牌を引く処理を実行
-      const result = await ErrorHandler.withTimeout(async () => {
-        return gameEngine.drawTile(gameId, playerId);
-      }, 5000);
-
-      if (result.success) {
-        // タイマーをクリア
-        clearTurnTimer(playerId);
-
-        // ゲーム状態を同期
-        syncGameState(game);
-
-        // 特別な結果の処理
-        if (result.gameEnded) {
-          if (result.result === 'draw') {
-            ErrorHandler.log('info', '流局', { gameId });
-
-            // ゲーム終了処理
-            const finalGameState = game.getGameState();
-            io.to(gameId).emit('gameEnded', {
-              result: 'draw',
-              message: result.message,
-              finalState: finalGameState
-            });
-
-            // ゲームをクリーンアップ
-            cleanupFinishedGame(gameId);
-          } else if (result.result === 'tsumo') {
-            ErrorHandler.log('info', 'ツモ上がり', { gameId, winner: result.winner });
-
-            // 勝者情報を取得
-            const winner = game.getPlayer(result.winner);
-            const finalGameState = game.getGameState();
-
-            io.to(gameId).emit('gameEnded', {
-              result: 'tsumo',
-              winner: {
-                id: winner.id,
-                name: winner.name
-              },
-              winningTile: result.tile,
-              message: result.message,
-              finalState: finalGameState
-            });
-
-            // ゲームをクリーンアップ
-            cleanupFinishedGame(gameId);
-          }
-        } else if (result.autoDiscarded) {
-          // リーチ中の自動捨て牌
-          io.to(gameId).emit('autoDiscard', {
-            playerId: playerId,
-            discardedTile: result.autoDiscarded,
-            message: result.message
-          });
-        }
-      } else {
-        ErrorHandler.log('warn', '牌を引く処理失敗', {
-          playerId,
-          gameId,
-          error: result.error,
-          gameState: game ? game.gameState : 'unknown'
-        });
-        socket.emit('actionError', ErrorHandler.createDetailedErrorResponse(
-          ERROR_TYPES.INVALID_MOVE,
-          result.error,
-          { action: 'drawTile', gameId }
-        ));
-      }
-    } catch (error) {
-      ErrorHandler.log('error', '牌を引く処理でエラー', {
-        playerId,
-        gameId,
-        error: error.message,
-        stack: error.stack
-      });
-
-      if (error.message.includes('タイムアウト')) {
-        socket.emit('actionError', ErrorHandler.createErrorResponse(
-          ERROR_TYPES.TIMEOUT_ERROR,
-          '牌を引く処理がタイムアウトしました'
-        ));
-      } else {
-        socket.emit('actionError', ErrorHandler.createErrorResponse(
-          ERROR_TYPES.CONNECTION_ERROR,
-          '牌を引く処理でエラーが発生しました'
-        ));
-      }
-    }
-  });
+  // 手動牌引きは削除 - 自動牌引きのみ使用（要件7.1）
 
   // 牌を捨てる処理（要件2.2, 2.3）
   ErrorHandler.wrapSocketHandler(socket, 'discardTile', async (data) => {

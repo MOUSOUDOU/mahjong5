@@ -39,7 +39,126 @@ class GameEngine {
   }
 
   /**
-   * プレイヤーが牌を引く処理
+   * 手番開始時の自動牌引き処理
+   * 要件7.1に対応：手番開始時に自動的に牌を引く
+   * @param {string} gameId - ゲームID
+   * @param {string} playerId - プレイヤーID
+   * @returns {Object} 処理結果
+   */
+  autoDrawTile(gameId, playerId) {
+    try {
+      // 入力検証
+      if (!gameId || typeof gameId !== 'string') {
+        ErrorHandler.log('warn', '無効なゲームID', { gameId, playerId });
+        return { success: false, error: '無効なゲームIDです' };
+      }
+
+      if (!playerId || typeof playerId !== 'string') {
+        ErrorHandler.log('warn', '無効なプレイヤーID', { gameId, playerId });
+        return { success: false, error: '無効なプレイヤーIDです' };
+      }
+
+      const game = this.getGame(gameId);
+      if (!game) {
+        ErrorHandler.log('warn', 'ゲームが見つからない', { gameId, playerId });
+        return { success: false, error: 'ゲームが見つかりません' };
+      }
+
+      if (!game.isPlayable()) {
+        ErrorHandler.log('warn', 'ゲームがプレイ不可能', { 
+          gameId, 
+          playerId, 
+          gameState: game.gameState 
+        });
+        return { success: false, error: 'ゲームがプレイ可能な状態ではありません' };
+      }
+
+      if (!game.isPlayerTurn(playerId)) {
+        ErrorHandler.log('warn', 'プレイヤーの手番ではない', { 
+          gameId, 
+          playerId, 
+          currentPlayer: game.getCurrentPlayer()?.id 
+        });
+        return { success: false, error: 'あなたの手番ではありません' };
+      }
+
+      const player = game.getPlayer(playerId);
+      if (!player) {
+        ErrorHandler.log('warn', 'プレイヤーが見つからない', { gameId, playerId });
+        return { success: false, error: 'プレイヤーが見つかりません' };
+      }
+
+      if (player.isHandFull()) {
+        ErrorHandler.log('warn', '手牌が満杯', { 
+          gameId, 
+          playerId, 
+          handSize: player.getHandSize() 
+        });
+        return { success: false, error: '手牌が満杯です' };
+      }
+
+      if (game.isDeckEmpty()) {
+        // 流局処理（要件6.1）
+        ErrorHandler.log('info', '流局処理 - 山が空', { gameId });
+        game.declareDraw();
+        return { 
+          success: true, 
+          tile: null, 
+          gameEnded: true, 
+          result: 'draw',
+          message: '山が空になりました。流局です。' 
+        };
+      }
+
+      const drawnTile = game.deck.drawTile();
+      if (!drawnTile) {
+        ErrorHandler.log('error', '牌を引けない', { gameId, playerId });
+        return { success: false, error: '牌を引けませんでした' };
+      }
+
+      player.addTileToHand(drawnTile);
+      player.lastDrawnTile = drawnTile; // 引いた牌を記録（リーチ後制限用）
+
+      // ツモ上がりの判定（要件4.1）
+      if (player.isRiichi && HandEvaluator.checkWinningHand(player.hand)) {
+        ErrorHandler.log('info', 'ツモ上がり', { gameId, playerId });
+        game.endGame(playerId);
+        return {
+          success: true,
+          tile: drawnTile,
+          gameEnded: true,
+          result: 'tsumo',
+          winner: playerId,
+          message: 'ツモ！'
+        };
+      }
+
+      ErrorHandler.log('debug', '自動牌引き処理成功', { 
+        gameId, 
+        playerId, 
+        tileId: drawnTile.id,
+        handSize: player.getHandSize()
+      });
+
+      return {
+        success: true,
+        tile: drawnTile,
+        gameEnded: false
+      };
+
+    } catch (error) {
+      ErrorHandler.log('error', '自動牌引き処理でエラー', { 
+        gameId, 
+        playerId, 
+        error: error.message,
+        stack: error.stack 
+      });
+      return { success: false, error: 'システムエラーが発生しました' };
+    }
+  }
+
+  /**
+   * プレイヤーが牌を引く処理（従来版・互換性のため残す）
    * 要件2.1に対応：プレイヤーの手番時に山から1枚牌を引く
    * @param {string} gameId - ゲームID
    * @param {string} playerId - プレイヤーID
@@ -257,9 +376,18 @@ class GameEngine {
         return { success: false, error: '手牌が5枚ではありません' };
       }
 
+      // リーチ後の牌捨て制限チェック（要件3.5, 7.4）
       if (player.isRiichi) {
-        ErrorHandler.log('warn', 'リーチ中の手動捨て牌試行', { gameId, playerId, tileId });
-        return { success: false, error: 'リーチ中は牌を選んで捨てることはできません' };
+        const lastDrawnTile = player.lastDrawnTile;
+        if (!lastDrawnTile || lastDrawnTile.id !== tileId) {
+          ErrorHandler.log('warn', 'リーチ後の制限違反', { 
+            gameId, 
+            playerId, 
+            tileId,
+            lastDrawnTileId: lastDrawnTile?.id 
+          });
+          return { success: false, error: 'リーチ後は引いた牌以外を捨てることはできません' };
+        }
       }
 
       if (!player.hasTileInHand(tileId)) {
