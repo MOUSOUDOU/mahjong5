@@ -86,6 +86,14 @@ socket.on('autoTileDraw', (data) => {
 socket.on('tileDiscarded', (data) => {
     console.log('牌が捨てられました:', data);
     // ゲーム状態は gameStateUpdate で更新される
+    // 相手が牌を捨てた場合、ロン判定のために少し遅延してボタン状態を更新
+    setTimeout(() => {
+        if (currentGameState) {
+            const player = currentGameState.players.find(p => p.id === playerId);
+            const isMyTurn = currentGameState.players[currentGameState.currentPlayerIndex]?.id === playerId;
+            updateWinningButtons(currentGameState, isMyTurn);
+        }
+    }, 100);
 });
 
 socket.on('riichiDeclared', (data) => {
@@ -1596,12 +1604,7 @@ function updateGameDisplay(gameState) {
     const isMyTurn = gameState.players[gameState.currentPlayerIndex]?.id === playerId;
     updateButtonStates(gameState, isMyTurn);
 
-    // 上がり判定（実際の判定ロジックは後で実装）
-    if (player && isMyTurn) {
-        // ここで実際のツモ・ロン判定を行う
-        // 現在は仮の実装
-        showWinningOptions(false, false);
-    }
+    // 上がり判定は updateWinningButtons で処理される
 }
 
 function updateButtonStates(gameState, isMyTurn) {
@@ -1649,9 +1652,8 @@ function updateButtonStates(gameState, isMyTurn) {
 
     riichiBtn.disabled = !canDeclareRiichi;
 
-    // ロン・ツモボタンは後で実装
-    ronBtn.style.display = 'none';
-    tsumoBtn.style.display = 'none';
+    // ツモ・ロンボタンの状態更新
+    updateWinningButtons(gameState, isMyTurn);
 }
 
 // テンパイ判定関数（簡易版）
@@ -1911,15 +1913,215 @@ function updatePlayerStatus(player, isOpponent = false) {
     }
 }
 
-function showWinningOptions(canTsumo, canRon) {
-    const tsumoBtn = document.getElementById('tsumo-btn');
-    const ronBtn = document.getElementById('ron-btn');
+/**
+ * 上がり宣言ボタンの状態を更新
+ * 要件4.1, 4.2に対応：ツモ・ロン判定とボタン表示制御
+ */
+function updateWinningButtons(gameState, isMyTurn) {
+    const player = gameState.players.find(p => p.id === playerId);
+    const playerHand = gameState.playerHandTiles || [];
+    
+    if (!player) {
+        hideWinningButtons();
+        return;
+    }
 
+    // ツモ判定（要件4.1）
+    const canTsumo = checkCanTsumo(player, playerHand, isMyTurn);
+    
+    // ロン判定（要件4.2）
+    const canRon = checkCanRon(player, gameState, isMyTurn);
+    
+    console.log('上がり判定:', {
+        playerId: player.id,
+        isMyTurn,
+        isRiichi: player.isRiichi,
+        handSize: playerHand.length,
+        canTsumo,
+        canRon
+    });
+
+    showWinningOptions(canTsumo, canRon);
+}
+
+/**
+ * ツモ上がりが可能かチェック
+ * 要件4.1：リーチ状態のプレイヤーが引いた牌で完成形になった時
+ */
+function checkCanTsumo(player, playerHand, isMyTurn) {
+    // 条件チェック
+    if (!isMyTurn || !player.isRiichi || playerHand.length !== 5) {
+        return false;
+    }
+
+    // 5枚の手牌が完成形かチェック
+    return checkWinningHand(playerHand);
+}
+
+/**
+ * ロン上がりが可能かチェック
+ * 要件4.2：リーチ状態のプレイヤーの待ち牌を相手が捨てた時
+ */
+function checkCanRon(player, gameState, isMyTurn) {
+    // 自分の手番の時はロンできない
+    if (isMyTurn || !player.isRiichi) {
+        return false;
+    }
+
+    // 手牌が4枚でない場合はロンできない
+    const playerHand = gameState.playerHandTiles || [];
+    if (playerHand.length !== 4) {
+        return false;
+    }
+
+    // 相手が最後に捨てた牌を取得
+    const opponent = gameState.players.find(p => p.id !== playerId);
+    if (!opponent || !opponent.discardedTiles || opponent.discardedTiles.length === 0) {
+        return false;
+    }
+
+    const lastDiscardedTile = opponent.discardedTiles[opponent.discardedTiles.length - 1];
+    
+    // 待ち牌を計算
+    const waitingTiles = checkTenpai(playerHand);
+    
+    console.log('ロン判定:', {
+        playerHand: playerHand.map(t => getTileDisplayText(t)),
+        lastDiscardedTile: typeof lastDiscardedTile === 'string' ? lastDiscardedTile : getTileDisplayText(lastDiscardedTile),
+        waitingTiles: waitingTiles.map(t => getTileDisplayText(t))
+    });
+    
+    // 最後に捨てられた牌が待ち牌に含まれているかチェック
+    return waitingTiles.some(waitingTile => {
+        return isSameTile(waitingTile, lastDiscardedTile);
+    });
+}
+
+/**
+ * 5枚の手牌が完成形かチェック（簡易実装）
+ */
+function checkWinningHand(tiles) {
+    if (!tiles || tiles.length !== 5) {
+        return false;
+    }
+
+    // 牌の種類と枚数を集計
+    const tileCount = {};
+    tiles.forEach(tile => {
+        const key = `${tile.suit}_${tile.value}`;
+        tileCount[key] = (tileCount[key] || 0) + 1;
+    });
+
+    const counts = Object.values(tileCount).sort((a, b) => b - a);
+    
+    // パターン1: 3枚 + 2枚（刻子 + 対子）
+    if (counts.length === 2 && counts[0] === 3 && counts[1] === 2) {
+        console.log('完成形判定: 刻子+対子パターン');
+        return true;
+    }
+
+    // パターン2: 順子 + 対子（より複雑な判定が必要）
+    if (counts.length >= 3) {
+        // 簡易的な順子判定
+        const bambooTiles = tiles.filter(t => t.suit === 'bamboo').map(t => t.value).sort((a, b) => a - b);
+        if (bambooTiles.length >= 3) {
+            // 連続する3枚があるかチェック
+            for (let i = 0; i <= bambooTiles.length - 3; i++) {
+                if (bambooTiles[i + 1] === bambooTiles[i] + 1 && 
+                    bambooTiles[i + 2] === bambooTiles[i] + 2) {
+                    
+                    // 残りの牌が対子かチェック
+                    const sequenceTiles = [bambooTiles[i], bambooTiles[i + 1], bambooTiles[i + 2]];
+                    const remainingTiles = tiles.filter(tile => {
+                        if (tile.suit !== 'bamboo') return true;
+                        const index = sequenceTiles.indexOf(tile.value);
+                        if (index !== -1) {
+                            sequenceTiles.splice(index, 1);
+                            return false;
+                        }
+                        return true;
+                    });
+                    
+                    if (remainingTiles.length === 2 && 
+                        remainingTiles[0].suit === remainingTiles[1].suit &&
+                        remainingTiles[0].value === remainingTiles[1].value) {
+                        console.log('完成形判定: 順子+対子パターン');
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+/**
+ * 4枚の手牌のテンパイ判定（簡易実装）
+ */
+function checkTenpai(tiles) {
+    if (!tiles || tiles.length !== 4) {
+        return [];
+    }
+
+    const waitingTiles = [];
+    
+    // 全ての可能な牌を試して完成形になるかチェック
+    const possibleTiles = getAllPossibleTiles();
+    
+    for (const testTile of possibleTiles) {
+        const testHand = [...tiles, testTile];
+        if (checkWinningHand(testHand)) {
+            waitingTiles.push(testTile);
+        }
+    }
+    
+    return waitingTiles;
+}
+
+/**
+ * 全ての可能な牌を生成
+ */
+function getAllPossibleTiles() {
+    const tiles = [];
+    
+    // 索子1-9
+    for (let value = 1; value <= 9; value++) {
+        tiles.push({ suit: 'bamboo', value: value });
+    }
+    
+    // 字牌
+    const honorValues = ['white', 'green', 'red'];
+    for (const value of honorValues) {
+        tiles.push({ suit: 'honor', value: value });
+    }
+    
+    return tiles;
+}
+
+/**
+ * 2つの牌が同じかチェック
+ */
+function isSameTile(tile1, tile2) {
+    if (typeof tile2 === 'string') {
+        // 文字列形式の場合は表示テキストで比較
+        return getTileDisplayText(tile1) === tile2;
+    }
+    
+    return tile1.suit === tile2.suit && tile1.value === tile2.value;
+}
+
+/**
+ * 上がり宣言ボタンを表示/非表示
+ */
+function showWinningOptions(canTsumo, canRon) {
     if (canTsumo) {
         tsumoBtn.style.display = 'inline-block';
+        tsumoBtn.disabled = false;
         tsumoBtn.onclick = () => {
             if (safeEmit('declareWin', { type: 'tsumo' })) {
                 tsumoBtn.disabled = true;
+                console.log('ツモ宣言を送信しました');
             }
         };
     } else {
@@ -1928,14 +2130,24 @@ function showWinningOptions(canTsumo, canRon) {
 
     if (canRon) {
         ronBtn.style.display = 'inline-block';
+        ronBtn.disabled = false;
         ronBtn.onclick = () => {
             if (safeEmit('declareWin', { type: 'ron' })) {
                 ronBtn.disabled = true;
+                console.log('ロン宣言を送信しました');
             }
         };
     } else {
         ronBtn.style.display = 'none';
     }
+}
+
+/**
+ * 上がり宣言ボタンを非表示
+ */
+function hideWinningButtons() {
+    tsumoBtn.style.display = 'none';
+    ronBtn.style.display = 'none';
 }
 
 function addGameStateAnimation() {

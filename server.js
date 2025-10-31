@@ -908,6 +908,199 @@ io.on('connection', (socket) => {
     }
   });
 
+  // 上がり宣言処理（要件4.1, 4.2）
+  ErrorHandler.wrapSocketHandler(socket, 'declareWin', async (data) => {
+    const playerId = socket.id;
+    const { type } = data; // 'tsumo' または 'ron'
+
+    // レート制限チェック
+    if (!ErrorHandler.checkRateLimit(playerId, 'declareWin', 5)) {
+      socket.emit('actionError', ErrorHandler.createErrorResponse(
+        ERROR_TYPES.RATE_LIMIT_ERROR,
+        '上がり宣言が頻繁すぎます'
+      ));
+      return;
+    }
+
+    // 基本検証
+    const validation = ErrorHandler.validateGameOperation(playerId, playerGameMap, gameEngine);
+    if (!validation.success) {
+      socket.emit('actionError', validation);
+      return;
+    }
+
+    const { game, gameId } = validation;
+
+    ErrorHandler.log('info', '上がり宣言処理', { playerId, gameId, type });
+
+    try {
+      const player = game.getPlayer(playerId);
+      if (!player) {
+        socket.emit('actionError', ErrorHandler.createErrorResponse(
+          ERROR_TYPES.PLAYER_NOT_FOUND,
+          'プレイヤーが見つかりません'
+        ));
+        return;
+      }
+
+      // リーチしていない場合は上がれない（要件3.6）
+      if (!player.isRiichi) {
+        socket.emit('actionError', ErrorHandler.createErrorResponse(
+          ERROR_TYPES.RIICHI_REQUIRED,
+          'リーチしていないため上がることができません'
+        ));
+        return;
+      }
+
+      let winResult = null;
+
+      if (type === 'tsumo') {
+        // ツモ上がりの処理（要件4.1）
+        const isPlayerTurn = game.isPlayerTurn(playerId);
+        if (!isPlayerTurn) {
+          socket.emit('actionError', ErrorHandler.createErrorResponse(
+            ERROR_TYPES.NOT_PLAYER_TURN,
+            'あなたの手番ではありません'
+          ));
+          return;
+        }
+
+        if (player.getHandSize() !== 5) {
+          socket.emit('actionError', ErrorHandler.createErrorResponse(
+            ERROR_TYPES.INVALID_MOVE,
+            '手牌が5枚ではありません'
+          ));
+          return;
+        }
+
+        // 完成形判定
+        const HandEvaluator = require('./src/models/HandEvaluator');
+        if (!HandEvaluator.checkWinningHand(player.hand)) {
+          socket.emit('actionError', ErrorHandler.createErrorResponse(
+            ERROR_TYPES.INVALID_MOVE,
+            '完成形ではありません'
+          ));
+          return;
+        }
+
+        // ツモ上がり成功
+        game.endGame(playerId);
+        winResult = {
+          result: 'tsumo',
+          winner: {
+            id: player.id,
+            name: player.name
+          },
+          winningTile: player.lastDrawnTile,
+          message: 'ツモ！'
+        };
+
+      } else if (type === 'ron') {
+        // ロン上がりの処理（要件4.2）
+        const isPlayerTurn = game.isPlayerTurn(playerId);
+        if (isPlayerTurn) {
+          socket.emit('actionError', ErrorHandler.createErrorResponse(
+            ERROR_TYPES.INVALID_MOVE,
+            '自分の手番中はロンできません'
+          ));
+          return;
+        }
+
+        if (player.getHandSize() !== 4) {
+          socket.emit('actionError', ErrorHandler.createErrorResponse(
+            ERROR_TYPES.INVALID_MOVE,
+            '手牌が4枚ではありません'
+          ));
+          return;
+        }
+
+        // 相手の最後の捨て牌を取得
+        const opponent = game.getOpponentPlayer(playerId);
+        if (!opponent || opponent.discardedTiles.length === 0) {
+          socket.emit('actionError', ErrorHandler.createErrorResponse(
+            ERROR_TYPES.INVALID_MOVE,
+            '相手の捨て牌がありません'
+          ));
+          return;
+        }
+
+        const lastDiscardedTile = opponent.discardedTiles[opponent.discardedTiles.length - 1];
+        
+        // 待ち牌判定
+        const HandEvaluator = require('./src/models/HandEvaluator');
+        const waitingTiles = HandEvaluator.checkTenpai(player.hand);
+        
+        // 捨て牌が待ち牌に含まれているかチェック
+        const canRon = waitingTiles.some(waitingTileId => {
+          const [suit, value] = waitingTileId.split('_');
+          return lastDiscardedTile.suit === suit && 
+                 lastDiscardedTile.value.toString() === value;
+        });
+
+        if (!canRon) {
+          socket.emit('actionError', ErrorHandler.createErrorResponse(
+            ERROR_TYPES.INVALID_MOVE,
+            'その牌では上がれません'
+          ));
+          return;
+        }
+
+        // ロン上がり成功
+        game.endGame(playerId);
+        winResult = {
+          result: 'ron',
+          winner: {
+            id: player.id,
+            name: player.name
+          },
+          winningTile: lastDiscardedTile,
+          message: 'ロン！'
+        };
+
+      } else {
+        socket.emit('actionError', ErrorHandler.createErrorResponse(
+          ERROR_TYPES.INVALID_MOVE,
+          '無効な上がり宣言です'
+        ));
+        return;
+      }
+
+      // ゲーム終了通知
+      if (winResult) {
+        const finalGameState = game.getGameState();
+        
+        io.to(gameId).emit('gameEnded', {
+          ...winResult,
+          finalState: finalGameState
+        });
+
+        ErrorHandler.log('info', '上がり宣言成功', {
+          playerId,
+          gameId,
+          type,
+          winner: winResult.winner.id
+        });
+
+        // ゲームをクリーンアップ
+        cleanupFinishedGame(gameId);
+      }
+
+    } catch (error) {
+      ErrorHandler.log('error', '上がり宣言処理でエラー', {
+        playerId,
+        gameId,
+        type,
+        error: error.message,
+        stack: error.stack
+      });
+
+      socket.emit('actionError', ErrorHandler.createErrorResponse(
+        ERROR_TYPES.CONNECTION_ERROR,
+        '上がり宣言処理でエラーが発生しました'
+      ));
+    }
+  });
+
   // 新しいゲーム開始要求処理（要件6.4）
   ErrorHandler.wrapSocketHandler(socket, 'requestNewGame', async (data) => {
     const playerId = socket.id;
