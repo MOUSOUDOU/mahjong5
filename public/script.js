@@ -235,39 +235,31 @@ function setupModuleIntegration() {
             const currentGameState = gameStateManager.getCurrentGameState();
             const playerId = gameStateManager.getPlayerId();
             
-            if (!currentGameState || !playerId) {
-                console.error('ゲーム状態またはプレイヤーIDが不正です');
+            console.log('現在のゲーム状態:', currentGameState);
+            console.log('プレイヤーID:', playerId);
+            
+            if (!currentGameState) {
+                console.error('ゲーム状態が不正です');
                 return;
             }
             
-            // サーバーに自動引き判定を問い合わせ
-            const result = await judgmentClient.safeQuery('queryAutoDraw', playerId, currentGameState.gameId);
-            
-            console.log('自動引き判定結果:', result);
-            
-            if (result.allowed) {
-                // 自動引きが許可された場合
-                console.log('自動牌引きを実行:', result.reason);
-                socketManager.safeEmit('requestAutoDraw', {
-                    playerId: playerId,
-                    gameId: currentGameState.gameId
-                });
-            } else if (result.reason === 'ron_available' && result.ronData) {
-                // ロン可能な場合
-                console.log('ロン判定を優先:', result.ronData);
-                await handleRonAvailable(result.ronData);
-            } else {
-                console.log('自動引きが拒否されました:', result.reason);
+            if (!playerId) {
+                console.error('プレイヤーIDが不正です');
+                return;
             }
             
-        } catch (error) {
-            console.error('自動引き判定エラー:', error);
-            // エラー時はフォールバックとして自動引きを実行
-            const currentGameState = gameStateManager.getCurrentGameState();
-            socketManager.safeEmit('requestAutoDraw', {
-                playerId: gameStateManager.getPlayerId(),
+            // サーバーから自動牌引き要求が来た場合、直接実行
+            // サーバー側で既に判定済みのため、クライアント側では追加判定不要
+            console.log('自動牌引きを実行 - requestAutoDrawを送信');
+            const emitResult = socketManager.safeEmit('requestAutoDraw', {
+                playerId: playerId,
                 gameId: currentGameState.gameId
             });
+            console.log('requestAutoDraw送信結果:', emitResult);
+            
+        } catch (error) {
+            console.error('自動引き処理エラー:', error);
+            console.error('エラースタック:', error.stack);
         }
     });
 

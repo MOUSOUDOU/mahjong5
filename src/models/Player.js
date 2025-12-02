@@ -14,8 +14,10 @@ class Player {
     this.reachTileIndex = -1; // リーチ牌のインデックス（-1は未設定）
     this.discardedTiles = []; // 捨て牌
     this.lastDrawnTile = null; // 最後に引いた牌（リーチ後制限用）
-    this.ronWaiting = false;  // ロン待機状態
+    this.ronWaiting = false;  // ロン待機状態（後方互換性のため保持）
     this.ronWaitingStartTime = null; // ロン待機開始時刻
+    this.isWaitingForRon = false; // ロン待機状態（新しいプロパティ）
+    this.ronWaitingTimeout = null; // ロン待機タイムアウトID
   }
 
   /**
@@ -177,6 +179,50 @@ class Player {
   }
 
   /**
+   * ロン待機状態を設定（新しいメソッド）
+   */
+  setRonWaiting() {
+    try {
+      // 既存のタイムアウトをクリア（競合を防ぐ）
+      if (this.ronWaitingTimeout) {
+        clearTimeout(this.ronWaitingTimeout);
+        this.ronWaitingTimeout = null;
+      }
+      
+      this.isWaitingForRon = true;
+      this.ronWaiting = true; // 後方互換性のため
+      this.ronWaitingStartTime = Date.now();
+    } catch (error) {
+      console.error('ロン待機状態設定エラー:', error);
+    }
+  }
+
+  /**
+   * ロン待機状態を解除（新しいメソッド）
+   */
+  clearRonWaiting() {
+    try {
+      this.isWaitingForRon = false;
+      this.ronWaiting = false; // 後方互換性のため
+      this.ronWaitingStartTime = null;
+      if (this.ronWaitingTimeout) {
+        clearTimeout(this.ronWaitingTimeout);
+        this.ronWaitingTimeout = null;
+      }
+    } catch (error) {
+      console.error('ロン待機状態解除エラー:', error);
+    }
+  }
+
+  /**
+   * ロン待機状態かどうかを取得（新しいメソッド）
+   * @returns {boolean} ロン待機状態かどうか
+   */
+  isInRonWaitingState() {
+    return this.isWaitingForRon;
+  }
+
+  /**
    * プレイヤーの状態をリセット
    */
   reset() {
@@ -187,6 +233,11 @@ class Player {
     this.lastDrawnTile = null;
     this.ronWaiting = false;
     this.ronWaitingStartTime = null;
+    this.isWaitingForRon = false;
+    if (this.ronWaitingTimeout) {
+      clearTimeout(this.ronWaitingTimeout);
+      this.ronWaitingTimeout = null;
+    }
   }
 }
 

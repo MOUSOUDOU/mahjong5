@@ -268,54 +268,125 @@ function syncGameState(game) {
     }
   });
 
+  // 手番開始時の自動牌引き処理（要件7.1）
+  const autoDrawResult = handleAutoDrawTile(game);
+
+  // ゲーム状態を全プレイヤーに送信
   game.players.forEach(player => {
     const gameStateForPlayer = game.getGameStateForPlayer(player.id);
     io.to(player.id).emit('gameStateUpdate', gameStateForPlayer);
   });
 
-  // 手番開始時の自動牌引き処理（要件7.1）
-  handleAutoDrawTile(game);
-
-  // 手番タイマーを設定
-  setTurnTimer(game);
+  // タイマーが必要な場合のみ起動
+  if (shouldStartTurnTimer(game, autoDrawResult)) {
+    setTurnTimer(game);
+  }
 }
 
 /**
  * 手番開始時の自動牌引き処理
  * @param {Game} game - ゲーム
+ * @returns {Object} 自動牌引きの結果 { executed: boolean, reason: string }
  */
 function handleAutoDrawTile(game) {
   if (!game.isPlayable()) {
-    return;
+    return { executed: false, reason: 'game_not_playable' };
   }
 
   const currentPlayer = game.getCurrentPlayer();
   if (!currentPlayer) {
-    return;
+    return { executed: false, reason: 'no_current_player' };
   }
 
-  // 手牌が4枚の場合のみ自動牌引きの確認を送信
+  // 手牌が4枚の場合のみ自動牌引きを実行
   if (currentPlayer.getHandSize() === 4) {
     // ロン待機状態をチェック
-    if (currentPlayer.ronWaiting) {
+    if (currentPlayer.ronWaiting || currentPlayer.isWaitingForRon) {
       ErrorHandler.log('debug', '自動牌引きスキップ - ロン待機中', { 
         playerId: currentPlayer.id,
         gameId: game.gameId 
       });
-      return; // ロン待機中は自動牌引きをスキップ
+      return { executed: false, reason: 'ron_waiting' };
     }
 
-    // クライアントに自動牌引きの確認を送信（ロン判定の時間を与える）
-    ErrorHandler.log('debug', '自動牌引き確認をクライアントに送信', { 
+    // 直接自動牌引きを実行
+    ErrorHandler.log('debug', '自動牌引きを実行', { 
       playerId: currentPlayer.id,
       gameId: game.gameId 
     });
     
-    io.to(currentPlayer.id).emit('autoDrawRequest', {
-      playerId: currentPlayer.id,
-      gameId: game.gameId
+    const result = gameEngine.autoDrawTile(game.gameId, currentPlayer.id);
+    if (result.success) {
+      ErrorHandler.log('debug', '自動牌引き成功', {
+        playerId: currentPlayer.id,
+        gameId: game.gameId,
+        drawnTile: result.tile?.id
+      });
+      return { executed: true, reason: 'auto_draw_executed' };
+    } else {
+      ErrorHandler.log('warn', '自動牌引き失敗', {
+        playerId: currentPlayer.id,
+        gameId: game.gameId,
+        error: result.error
+      });
+      return { executed: false, reason: 'auto_draw_failed' };
+    }
+  }
+  
+  return { executed: false, reason: 'hand_not_4_tiles' };
+}
+
+/**
+ * 手番タイマーを起動すべきかを判定
+ * @param {Game} game - ゲーム
+ * @param {Object} autoDrawResult - 自動牌引きの結果
+ * @returns {boolean} タイマーを起動すべきか
+ */
+function shouldStartTurnTimer(game, autoDrawResult) {
+  try {
+    const currentPlayer = game.getCurrentPlayer();
+    if (!currentPlayer) {
+      ErrorHandler.log('warn', 'タイマー起動判定: 現在のプレイヤーが存在しません', {
+        gameId: game.gameId
+      });
+      return false;
+    }
+    
+    // 自動牌引きが実行された場合はタイマー不要
+    if (autoDrawResult && autoDrawResult.executed) {
+      ErrorHandler.log('debug', 'タイマースキップ: 自動牌引きが実行されました', {
+        gameId: game.gameId,
+        playerId: currentPlayer.id,
+        reason: autoDrawResult.reason
+      });
+      return false;
+    }
+    
+    // ロン待機状態の場合はタイマー必要
+    if (currentPlayer.isWaitingForRon || currentPlayer.ronWaiting) {
+      ErrorHandler.log('debug', 'タイマー起動: ロン待機状態です', {
+        gameId: game.gameId,
+        playerId: currentPlayer.id,
+        isWaitingForRon: currentPlayer.isWaitingForRon,
+        ronWaiting: currentPlayer.ronWaiting
+      });
+      return true;
+    }
+    
+    // その他の場合はタイマー不要
+    ErrorHandler.log('debug', 'タイマースキップ: 通常状態です', {
+      gameId: game.gameId,
+      playerId: currentPlayer.id
     });
-    return;
+    return false;
+  } catch (error) {
+    ErrorHandler.log('error', 'タイマー起動判定でエラー', {
+      gameId: game?.gameId,
+      error: error.message,
+      stack: error.stack
+    });
+    // エラー時はタイマーを起動しない（安全側に倒す）
+    return false;
   }
 }
 
@@ -1073,6 +1144,9 @@ io.on('connection', (socket) => {
         }
 
         // ロン上がり成功
+        // ロン待機状態を解除
+        player.clearRonWaiting();
+        
         // ロンの場合は相手の捨て牌を手牌に加えて完成形にする
         const completeHand = [...player.hand, lastDiscardedTile];
         
@@ -1223,8 +1297,7 @@ io.on('connection', (socket) => {
       }
 
       // ロン待機状態を設定
-      player.ronWaiting = true;
-      player.ronWaitingStartTime = Date.now();
+      player.setRonWaiting();
 
       ErrorHandler.log('debug', 'ロン待機状態設定完了', { 
         playerId, 
@@ -1233,10 +1306,9 @@ io.on('connection', (socket) => {
       });
 
       // 10秒後に自動的にロン待機をキャンセル
-      setTimeout(() => {
-        if (player.ronWaiting) {
-          player.ronWaiting = false;
-          player.ronWaitingStartTime = null;
+      player.ronWaitingTimeout = setTimeout(() => {
+        if (player.isWaitingForRon || player.ronWaiting) {
+          player.clearRonWaiting();
           ErrorHandler.log('info', 'ロン待機状態タイムアウト', { playerId, gameId });
           
           // 0.5秒後に自動牌引きを実行
@@ -1354,8 +1426,7 @@ io.on('connection', (socket) => {
 
       const player = game.getPlayer(playerId);
       if (player) {
-        player.ronWaiting = false;
-        player.ronWaitingStartTime = null;
+        player.clearRonWaiting();
         ErrorHandler.log('debug', 'ロン待機状態キャンセル完了', { playerId, gameId });
         
         // 0.5秒後に自動牌引きを実行（手番の場合のみ）
@@ -1480,6 +1551,31 @@ io.on('connection', (socket) => {
       'checkRon',
       data?.playerId
     );
+    
+    // ロン可能な場合、ロン待機状態を設定
+    if (result.possible) {
+      const game = gameEngine.getGame(data?.gameId);
+      if (game) {
+        const player = game.getPlayer(data?.playerId);
+        if (player) {
+          player.setRonWaiting();
+          
+          // 10秒後に自動的にロン待機状態を解除
+          player.ronWaitingTimeout = setTimeout(() => {
+            ErrorHandler.log('debug', 'ロン待機タイムアウト - 自動解除', {
+              playerId: player.id,
+              gameId: game.gameId
+            });
+            player.clearRonWaiting();
+          }, 10000);
+          
+          ErrorHandler.log('debug', 'ロン待機状態を設定', {
+            playerId: player.id,
+            gameId: game.gameId
+          });
+        }
+      }
+    }
     
     socket.emit('ronResult', {
       playerId: data?.playerId,
