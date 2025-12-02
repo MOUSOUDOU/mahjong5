@@ -14,6 +14,11 @@ class Game {
     this.gameId = this.generateGameId();
     this.lastActivity = Date.now(); // 最後のアクティビティ時刻
     this.createdAt = Date.now();    // ゲーム作成時刻
+    
+    // 判定システム用の新しいプロパティ
+    this.turnHistory = [];          // 手番履歴
+    this.lastDiscardedTile = null;  // 最後に捨てられた牌
+    this.pendingJudgments = new Map(); // 保留中の判定
   }
 
   /**
@@ -326,6 +331,167 @@ class Game {
    */
   getElapsedMinutes() {
     return Math.floor((Date.now() - this.createdAt) / (1000 * 60));
+  }
+
+  // ========== 判定システム用の拡張メソッド ==========
+
+  /**
+   * 最初の手番かどうかを判定
+   * 要件1.2: 最初の手番では自動引きを許可
+   * @param {string} playerId - プレイヤーID
+   * @returns {boolean} 最初の手番かどうか
+   */
+  isFirstTurn(playerId) {
+    if (!this.turnHistory) {
+      this.turnHistory = [];
+    }
+    
+    return this.turnHistory.length === 0 || 
+           this.turnHistory.every(turn => turn.playerId !== playerId);
+  }
+
+  /**
+   * 最後に捨てられた牌を取得
+   * 要件1.3: 直前の相手の捨て牌がロン牌である場合の判定用
+   * @returns {Object|null} 最後に捨てられた牌
+   */
+  getLastDiscardedTile() {
+    return this.lastDiscardedTile || null;
+  }
+
+  /**
+   * 最後に捨てられた牌を設定
+   * @param {Object} tile - 捨てられた牌
+   * @param {string} playerId - 捨てたプレイヤーID
+   */
+  setLastDiscardedTile(tile, playerId) {
+    this.lastDiscardedTile = {
+      ...tile,
+      discardedBy: playerId,
+      timestamp: Date.now()
+    };
+  }
+
+  /**
+   * 手番履歴を追加
+   * @param {string} playerId - プレイヤーID
+   * @param {string} action - アクション（'draw', 'discard', 'riichi', 'tsumo', 'ron'）
+   * @param {Object} data - 追加データ
+   */
+  addTurnHistory(playerId, action, data = {}) {
+    if (!this.turnHistory) {
+      this.turnHistory = [];
+    }
+    
+    this.turnHistory.push({
+      playerId: playerId,
+      action: action,
+      data: data,
+      timestamp: Date.now()
+    });
+
+    // 履歴が長くなりすぎないよう制限
+    if (this.turnHistory.length > 100) {
+      this.turnHistory = this.turnHistory.slice(-50);
+    }
+  }
+
+  /**
+   * 手番履歴を取得
+   * @param {string} playerId - プレイヤーID（省略時は全履歴）
+   * @returns {Object[]} 手番履歴
+   */
+  getTurnHistory(playerId = null) {
+    if (!this.turnHistory) {
+      this.turnHistory = [];
+    }
+    
+    if (playerId) {
+      return this.turnHistory.filter(turn => turn.playerId === playerId);
+    }
+    return [...this.turnHistory];
+  }
+
+  /**
+   * 判定を保留状態に設定
+   * @param {string} playerId - プレイヤーID
+   * @param {string} judgmentType - 判定タイプ
+   * @param {Object} data - 判定データ
+   */
+  setPendingJudgment(playerId, judgmentType, data) {
+    if (!this.pendingJudgments) {
+      this.pendingJudgments = new Map();
+    }
+    
+    this.pendingJudgments.set(`${playerId}_${judgmentType}`, {
+      playerId,
+      type: judgmentType,
+      data,
+      timestamp: Date.now()
+    });
+  }
+
+  /**
+   * 保留中の判定を取得
+   * @param {string} playerId - プレイヤーID
+   * @param {string} judgmentType - 判定タイプ
+   * @returns {Object|null} 保留中の判定
+   */
+  getPendingJudgment(playerId, judgmentType) {
+    if (!this.pendingJudgments) {
+      this.pendingJudgments = new Map();
+    }
+    
+    return this.pendingJudgments.get(`${playerId}_${judgmentType}`) || null;
+  }
+
+  /**
+   * 保留中の判定をクリア
+   * @param {string} playerId - プレイヤーID
+   * @param {string} judgmentType - 判定タイプ
+   * @returns {boolean} クリアに成功したかどうか
+   */
+  clearPendingJudgment(playerId, judgmentType) {
+    if (!this.pendingJudgments) {
+      this.pendingJudgments = new Map();
+    }
+    
+    return this.pendingJudgments.delete(`${playerId}_${judgmentType}`);
+  }
+
+  /**
+   * 全ての保留中の判定を取得
+   * @returns {Object[]} 保留中の判定の配列
+   */
+  getAllPendingJudgments() {
+    if (!this.pendingJudgments) {
+      this.pendingJudgments = new Map();
+    }
+    
+    return Array.from(this.pendingJudgments.values());
+  }
+
+  /**
+   * 期限切れの保留判定をクリーンアップ
+   * @param {number} timeoutMs - タイムアウト時間（ミリ秒）
+   */
+  cleanupExpiredJudgments(timeoutMs = 30000) {
+    if (!this.pendingJudgments) {
+      this.pendingJudgments = new Map();
+    }
+    
+    const now = Date.now();
+    const expiredKeys = [];
+    
+    for (const [key, judgment] of this.pendingJudgments.entries()) {
+      if (now - judgment.timestamp > timeoutMs) {
+        expiredKeys.push(key);
+      }
+    }
+    
+    expiredKeys.forEach(key => this.pendingJudgments.delete(key));
+    
+    return expiredKeys.length;
   }
 }
 

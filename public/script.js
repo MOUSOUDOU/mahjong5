@@ -30,6 +30,7 @@ let tileManager = null;
 let discardDisplayManager = null;
 let winningManager = null;
 let uiManager = null;
+let judgmentClient = null;
 
 /**
  * アプリケーションの初期化
@@ -72,10 +73,14 @@ function initializeApplication() {
         uiManager.initialize(gameStateManager, errorHandler, winningManager, tileManager);
         console.log('UIManager初期化完了');
 
-        // 8. モジュール間の連携を設定
+        // 8. JudgmentClientを初期化
+        judgmentClient = new JudgmentClient(socketManager);
+        console.log('JudgmentClient初期化完了');
+
+        // 9. モジュール間の連携を設定
         setupModuleIntegration();
 
-        // 9. イベントリスナーを設定
+        // 10. イベントリスナーを設定
         setupEventListeners();
 
         // 10. 再接続チェックを開始
@@ -97,7 +102,57 @@ function initializeApplication() {
 function setupModuleIntegration() {
     // Socket.ioイベントとゲーム状態管理の連携
     socketManager.on('gameStateUpdate', (gameState) => {
+        const previousState = gameStateManager.getCurrentGameState();
+        
+        // 手牌状態の整合性チェック
+        if (gameState && gameState.playerHandTiles) {
+            const handSize = gameState.playerHandTiles.length;
+            if (handSize < 4 || handSize > 5) {
+                console.error('手牌数異常を検出:', {
+                    handSize: handSize,
+                    gameId: gameState.gameId,
+                    playerId: gameStateManager.getPlayerId()
+                });
+                errorHandler.showMessage('手牌数に異常が検出されました', 3000);
+            }
+        }
+        
         gameStateManager.updateGameState(gameState);
+        
+        // 牌を引いた後の自摸判定問い合わせ
+        if (previousState && gameState && gameState.playerHandTiles) {
+            const currentHandSize = gameState.playerHandTiles.length;
+            const previousHandSize = previousState.playerHandTiles ? previousState.playerHandTiles.length : 0;
+            
+            // 手牌が4枚から5枚に増えた場合（牌を引いた場合）
+            if (previousHandSize === 4 && currentHandSize === 5) {
+                console.log('牌を引きました - 自摸判定を実行');
+                handleTileDrawn(gameState);
+            }
+        }
+        
+        // 相手が牌を捨てた直後の状態でロン判定を行う
+        if (previousState && gameState) {
+            const player = gameState.players.find(p => p.id === gameStateManager.getPlayerId());
+            const opponent = gameState.players.find(p => p.id !== gameStateManager.getPlayerId());
+            
+            // リーチ中で手牌が4枚、かつ相手の捨て牌が増えた場合
+            if (player && player.isRiichi && 
+                gameState.playerHandTiles && gameState.playerHandTiles.length === 4 &&
+                opponent && opponent.discardedTiles &&
+                previousState.players) {
+                
+                const prevOpponent = previousState.players.find(p => p.id !== gameStateManager.getPlayerId());
+                if (prevOpponent && prevOpponent.discardedTiles &&
+                    opponent.discardedTiles.length > prevOpponent.discardedTiles.length) {
+                    
+                    console.log('相手が牌を捨てた直後 - ロン判定を実行');
+                    const lastDiscardedTile = opponent.discardedTiles[opponent.discardedTiles.length - 1];
+                    handleOpponentDiscard(lastDiscardedTile, gameState);
+                }
+            }
+        }
+        
         updateGameDisplay(gameState);
     });
 
@@ -172,8 +227,106 @@ function setupModuleIntegration() {
         errorHandler.showMessage(data.message, 2000);
     });
 
-    socketManager.on('tileDiscarded', (data) => {
-        // 相手が牌を捨てた場合、ロン判定のために少し遅延してボタン状態を更新
+    // 自動牌引き要求の処理（新しい判定システム）
+    socketManager.on('autoDrawRequest', async (data) => {
+        console.log('自動牌引き要求を受信:', data);
+        
+        try {
+            const currentGameState = gameStateManager.getCurrentGameState();
+            const playerId = gameStateManager.getPlayerId();
+            
+            if (!currentGameState || !playerId) {
+                console.error('ゲーム状態またはプレイヤーIDが不正です');
+                return;
+            }
+            
+            // サーバーに自動引き判定を問い合わせ
+            const result = await judgmentClient.safeQuery('queryAutoDraw', playerId, currentGameState.gameId);
+            
+            console.log('自動引き判定結果:', result);
+            
+            if (result.allowed) {
+                // 自動引きが許可された場合
+                console.log('自動牌引きを実行:', result.reason);
+                socketManager.safeEmit('requestAutoDraw', {
+                    playerId: playerId,
+                    gameId: currentGameState.gameId
+                });
+            } else if (result.reason === 'ron_available' && result.ronData) {
+                // ロン可能な場合
+                console.log('ロン判定を優先:', result.ronData);
+                await handleRonAvailable(result.ronData);
+            } else {
+                console.log('自動引きが拒否されました:', result.reason);
+            }
+            
+        } catch (error) {
+            console.error('自動引き判定エラー:', error);
+            // エラー時はフォールバックとして自動引きを実行
+            const currentGameState = gameStateManager.getCurrentGameState();
+            socketManager.safeEmit('requestAutoDraw', {
+                playerId: gameStateManager.getPlayerId(),
+                gameId: currentGameState.gameId
+            });
+        }
+    });
+
+    socketManager.on('tileDiscarded', async (data) => {
+        console.log('牌が捨てられました:', data);
+        
+        // 相手が牌を捨てた場合、サーバーにロン判定を問い合わせ
+        if (currentGameState && data.playerId !== gameStateManager.getPlayerId()) {
+            const playerId = gameStateManager.getPlayerId();
+            const player = gameStateManager.getCurrentPlayer();
+            
+            // 前提条件チェック: プレイヤー情報とリーチ状態
+            if (!player || !player.isRiichi) {
+                console.log('ロン判定スキップ: リーチしていません');
+                return;
+            }
+
+            // 手牌が4枚でない場合はスキップ
+            const playerHand = gameStateManager.getPlayerHand();
+            if (!Array.isArray(playerHand) || playerHand.length !== 4) {
+                console.log('ロン判定スキップ: 手牌が4枚ではありません', playerHand?.length);
+                return;
+            }
+
+            console.log('サーバーにロン判定を問い合わせ:', data.discardedTile);
+            
+            try {
+                // サーバーにロン判定を問い合わせ
+                const result = await judgmentClient.safeQuery('queryRon', playerId, currentGameState.gameId, data.discardedTile);
+                
+                console.log('ロン判定結果:', result);
+                
+                if (result.possible) {
+                    // ロン可能な場合
+                    winningManager.showWinningOptions(false, true);
+                    errorHandler.showMessage('ロン可能です！', 3000);
+                    
+                    // サーバーにロン待機状態を通知
+                    socketManager.safeEmit('ronWaiting', { 
+                        playerId: playerId,
+                        gameId: currentGameState.gameId 
+                    });
+                    
+                    // 10秒後に自動的にロン待機をキャンセル
+                    setTimeout(() => {
+                        console.log('ロン待機タイムアウト - 自動キャンセル');
+                        socketManager.safeEmit('cancelRonWaiting', { 
+                            playerId: playerId 
+                        });
+                        winningManager.hideWinningButtons();
+                    }, 10000);
+                }
+                
+            } catch (error) {
+                console.error('ロン判定問い合わせエラー:', error);
+            }
+        }
+        
+        // 通常の処理を続行（少し遅延してボタン状態を更新）
         setTimeout(() => {
             if (currentGameState) {
                 const isMyTurn = gameStateManager.isMyTurn();
@@ -279,23 +432,46 @@ function setupModuleIntegration() {
  * イベントリスナーを設定
  */
 function setupEventListeners() {
-    // リーチボタンのイベントリスナー
+    // リーチボタンのイベントリスナー（新しい判定システム）
     if (riichiBtn) {
-        riichiBtn.addEventListener('click', () => {
+        riichiBtn.addEventListener('click', async () => {
             const selectedTile = tileManager.getSelectedTile();
             if (!riichiBtn.disabled && selectedTile) {
-                // リーチ宣言と牌の破棄を同時に実行
-                const selectedTileId = selectedTile.id;
-                if (socketManager.safeEmit('declareRiichiAndDiscard', { 
-                    tileId: selectedTileId,
-                    isReachTile: true
-                })) {
-                    riichiBtn.disabled = true;
+                try {
+                    const currentGameState = gameStateManager.getCurrentGameState();
+                    const playerId = gameStateManager.getPlayerId();
                     
-                    console.log('リーチ宣言と牌の破棄を送信しました:', selectedTileId);
+                    if (!currentGameState || !playerId) {
+                        errorHandler.showError('ゲーム状態が不正です');
+                        return;
+                    }
                     
-                    // 選択状態をクリア
-                    tileManager.clearTileSelection();
+                    console.log('サーバーにリーチ判定を問い合わせ:', selectedTile);
+                    
+                    // サーバーにリーチ判定を問い合わせ
+                    const result = await judgmentClient.safeQuery('queryRiichi', playerId, currentGameState.gameId, selectedTile);
+                    
+                    console.log('リーチ判定結果:', result);
+                    
+                    if (result.possible) {
+                        // リーチ可能な場合、リーチ宣言と牌の破棄を実行
+                        if (socketManager.safeEmit('declareRiichiAndDiscard', { 
+                            tileId: selectedTile.id,
+                            isReachTile: true
+                        })) {
+                            riichiBtn.disabled = true;
+                            console.log('リーチ宣言と牌の破棄を送信しました:', selectedTile.id);
+                            tileManager.clearTileSelection();
+                        }
+                    } else {
+                        // リーチ不可能な場合
+                        errorHandler.showError('選択した牌ではリーチできません');
+                        console.log('リーチ不可:', result.reason || 'サーバー判定により不可');
+                    }
+                    
+                } catch (error) {
+                    console.error('リーチ判定問い合わせエラー:', error);
+                    errorHandler.showError('リーチ判定でエラーが発生しました');
                 }
             } else if (!selectedTile) {
                 errorHandler.showError('リーチを宣言するには捨てる牌を選択してください');
@@ -392,6 +568,130 @@ function testDoubleClickFeature() {
 
 function testTenpaiCheck() {
     return tileManager ? tileManager.testTenpaiCheck() : false;
+}
+
+// ========== 新しい判定システム用のヘルパー関数 ==========
+
+/**
+ * 牌を引いた後の自摸判定処理
+ * @param {Object} gameState - ゲーム状態
+ */
+async function handleTileDrawn(gameState) {
+    try {
+        const playerId = gameStateManager.getPlayerId();
+        const playerHand = gameState.playerHandTiles;
+        
+        if (!playerId || !playerHand || playerHand.length !== 5) {
+            return;
+        }
+        
+        // 引いた牌を特定（最後の牌と仮定）
+        const drawnTile = playerHand[playerHand.length - 1];
+        
+        console.log('サーバーに自摸判定を問い合わせ:', drawnTile);
+        
+        // サーバーに自摸判定を問い合わせ
+        const result = await judgmentClient.safeQuery('queryTsumo', playerId, gameState.gameId, drawnTile);
+        
+        console.log('自摸判定結果:', result);
+        
+        if (result.possible) {
+            // 自摸可能な場合
+            winningManager.showWinningOptions(true, false);
+            errorHandler.showMessage('ツモ可能です！', 3000);
+        }
+        
+    } catch (error) {
+        console.error('自摸判定問い合わせエラー:', error);
+    }
+}
+
+/**
+ * 相手の捨て牌に対するロン判定処理
+ * @param {Object} discardedTile - 捨てられた牌
+ * @param {Object} gameState - ゲーム状態
+ */
+async function handleOpponentDiscard(discardedTile, gameState) {
+    try {
+        const playerId = gameStateManager.getPlayerId();
+        const player = gameState.players.find(p => p.id === playerId);
+        
+        if (!player || !player.isRiichi) {
+            return;
+        }
+        
+        const playerHand = gameState.playerHandTiles;
+        if (!Array.isArray(playerHand) || playerHand.length !== 4) {
+            return;
+        }
+        
+        console.log('サーバーにロン判定を問い合わせ:', discardedTile);
+        
+        // サーバーにロン判定を問い合わせ
+        const result = await judgmentClient.safeQuery('queryRon', playerId, gameState.gameId, discardedTile);
+        
+        console.log('ロン判定結果:', result);
+        
+        if (result.possible) {
+            // ロン可能な場合
+            winningManager.showWinningOptions(false, true);
+            errorHandler.showMessage('ロン可能です！', 5000);
+            
+            // サーバーにロン待機状態を通知
+            socketManager.safeEmit('ronWaiting', { 
+                playerId: playerId,
+                gameId: gameState.gameId 
+            });
+            
+            // 10秒後に自動的にロン待機をキャンセル
+            setTimeout(() => {
+                console.log('ロン待機タイムアウト - 自動キャンセル');
+                socketManager.safeEmit('cancelRonWaiting', { 
+                    playerId: playerId 
+                });
+                winningManager.hideWinningButtons();
+            }, 10000);
+        }
+        
+    } catch (error) {
+        console.error('ロン判定問い合わせエラー:', error);
+    }
+}
+
+/**
+ * ロン可能状態の処理
+ * @param {Object} ronData - ロンデータ
+ */
+async function handleRonAvailable(ronData) {
+    try {
+        console.log('ロン可能状態を処理:', ronData);
+        
+        if (ronData.possible) {
+            winningManager.showWinningOptions(false, true);
+            errorHandler.showMessage('ロン可能です！', 5000);
+            
+            const currentGameState = gameStateManager.getCurrentGameState();
+            const playerId = gameStateManager.getPlayerId();
+            
+            // サーバーにロン待機状態を通知
+            socketManager.safeEmit('ronWaiting', { 
+                playerId: playerId,
+                gameId: currentGameState.gameId 
+            });
+            
+            // 10秒後に自動的にロン待機をキャンセル
+            setTimeout(() => {
+                console.log('ロン待機タイムアウト - 自動キャンセル');
+                socketManager.safeEmit('cancelRonWaiting', { 
+                    playerId: playerId 
+                });
+                winningManager.hideWinningButtons();
+            }, 10000);
+        }
+        
+    } catch (error) {
+        console.error('ロン可能状態処理エラー:', error);
+    }
 }
 
 function testRiichiButtonLogic() {

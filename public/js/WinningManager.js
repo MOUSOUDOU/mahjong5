@@ -43,10 +43,22 @@ class WinningManager {
             return;
         }
 
+        if (!gameState) {
+            console.log('上がり判定: ゲーム状態がありません');
+            this.hideWinningButtons();
+            return;
+        }
+
         const player = this.gameStateManager.getCurrentPlayer();
         const playerHand = this.gameStateManager.getPlayerHand();
         
         if (!player) {
+            this.hideWinningButtons();
+            return;
+        }
+
+        if (!Array.isArray(playerHand)) {
+            console.log('上がり判定: 手牌データが配列ではありません', typeof playerHand);
             this.hideWinningButtons();
             return;
         }
@@ -94,38 +106,82 @@ class WinningManager {
      * @returns {boolean} ロン可能かどうか
      */
     checkCanRon(player, gameState, isMyTurn) {
-        // 自分の手番の時はロンできない
-        if (isMyTurn || !player.isRiichi) {
+        // 入力検証
+        if (!player) {
+            console.log('ロン判定: プレイヤー情報がありません');
             return false;
         }
 
-        // 手牌が4枚でない場合はロンできない
+        if (!gameState) {
+            console.log('ロン判定: ゲーム状態がありません');
+            return false;
+        }
+
+        // リーチしていない場合はロンできない
+        if (!player.isRiichi) {
+            console.log('ロン判定: リーチしていません');
+            return false;
+        }
+
+        // 手牌が4枚でない場合はロンできない（相手が牌を捨てた直後の状態）
         const playerHand = gameState.playerHandTiles || [];
+        if (!Array.isArray(playerHand)) {
+            console.log('ロン判定: 手牌データが配列ではありません', typeof playerHand);
+            return false;
+        }
+
         if (playerHand.length !== 4) {
+            console.log('ロン判定: 手牌が4枚ではありません', playerHand.length);
             return false;
         }
 
-        // 相手が最後に捨てた牌を取得
-        const opponent = gameState.players.find(p => p.id !== this.gameStateManager.getPlayerId());
-        if (!opponent || !opponent.discardedTiles || opponent.discardedTiles.length === 0) {
-            return false;
+        // 最後に捨てられた牌を取得（直接指定されている場合はそれを使用）
+        let lastDiscardedTile = gameState.lastDiscardedTile;
+        
+        if (!lastDiscardedTile) {
+            // 相手が最後に捨てた牌を取得
+            const opponent = gameState.players.find(p => p.id !== this.gameStateManager.getPlayerId());
+            if (!opponent || !opponent.discardedTiles || opponent.discardedTiles.length === 0) {
+                console.log('ロン判定: 相手の捨て牌がありません');
+                return false;
+            }
+            lastDiscardedTile = opponent.discardedTiles[opponent.discardedTiles.length - 1];
         }
-
-        const lastDiscardedTile = opponent.discardedTiles[opponent.discardedTiles.length - 1];
         
         // 待ち牌を計算
         const waitingTiles = this.checkTenpai(playerHand);
         
-        console.log('ロン判定:', {
+        // 最後に捨てられた牌の詳細ログ
+        let lastDiscardedTileText = 'undefined';
+        if (lastDiscardedTile) {
+            if (typeof lastDiscardedTile === 'string') {
+                lastDiscardedTileText = lastDiscardedTile;
+            } else if (typeof lastDiscardedTile === 'object') {
+                if (lastDiscardedTile.tile) {
+                    lastDiscardedTileText = lastDiscardedTile.tile;
+                } else {
+                    lastDiscardedTileText = this.getTileDisplayText(lastDiscardedTile);
+                }
+            }
+        }
+
+        console.log('ロン判定詳細:', {
+            isMyTurn,
+            isRiichi: player.isRiichi,
+            handSize: playerHand.length,
             playerHand: playerHand.map(t => this.getTileDisplayText(t)),
-            lastDiscardedTile: typeof lastDiscardedTile === 'string' ? lastDiscardedTile : this.getTileDisplayText(lastDiscardedTile),
+            lastDiscardedTile: lastDiscardedTileText,
+            lastDiscardedTileRaw: lastDiscardedTile,
             waitingTiles: waitingTiles.map(t => this.getTileDisplayText(t))
         });
         
         // 最後に捨てられた牌が待ち牌に含まれているかチェック
-        return waitingTiles.some(waitingTile => {
+        const canRon = waitingTiles.some(waitingTile => {
             return this.isSameTile(waitingTile, lastDiscardedTile);
         });
+        
+        console.log('ロン判定結果:', canRon);
+        return canRon;
     }
 
     /**
@@ -242,12 +298,43 @@ class WinningManager {
      * @returns {boolean} 同じ牌かどうか
      */
     isSameTile(tile1, tile2) {
+        let result;
+        
         if (typeof tile2 === 'string') {
             // 文字列形式の場合は表示テキストで比較
-            return this.getTileDisplayText(tile1) === tile2;
+            const tile1Text = this.getTileDisplayText(tile1);
+            
+            // 牌の表記を正規化（"8索" -> "8", "白" -> "白" など）
+            let tile2Normalized = this.normalizeTileText(tile2);
+            
+            result = tile1Text === tile2Normalized;
+            console.log('牌比較（文字列）:', { tile1Text, tile2, tile2Normalized, result });
+        } else if (typeof tile2 === 'object' && tile2 !== null) {
+            // オブジェクト形式の場合
+            if (tile2.tile) {
+                // {tile: "發", isReachTile: true} 形式の場合
+                const tile1Text = this.getTileDisplayText(tile1);
+                
+                // 牌の表記を正規化
+                let tile2Normalized = this.normalizeTileText(tile2.tile);
+                
+                result = tile1Text === tile2Normalized;
+                console.log('牌比較（オブジェクト.tile）:', { tile1Text, tile2: tile2.tile, tile2Normalized, result });
+            } else {
+                // 通常のタイルオブジェクト形式
+                result = tile1.suit === tile2.suit && tile1.value === tile2.value;
+                console.log('牌比較（オブジェクト）:', { 
+                    tile1: { suit: tile1.suit, value: tile1.value }, 
+                    tile2: { suit: tile2.suit, value: tile2.value }, 
+                    result 
+                });
+            }
+        } else {
+            result = false;
+            console.log('牌比較（不明な形式）:', { tile1, tile2, result });
         }
         
-        return tile1.suit === tile2.suit && tile1.value === tile2.value;
+        return result;
     }
 
     /**
@@ -269,6 +356,35 @@ class WinningManager {
             }
         }
         return tile.value;
+    }
+
+    /**
+     * 牌のテキスト表記を正規化
+     * @param {string} tileText - 牌のテキスト表記
+     * @returns {string} 正規化されたテキスト
+     */
+    normalizeTileText(tileText) {
+        if (!tileText || typeof tileText !== 'string') {
+            return tileText;
+        }
+
+        // "8索" -> "8" のような変換
+        if (tileText.endsWith('索')) {
+            return tileText.replace('索', '');
+        }
+        
+        // "8筒" -> "8" のような変換（筒子の場合）
+        if (tileText.endsWith('筒')) {
+            return tileText.replace('筒', '');
+        }
+        
+        // "8万" -> "8" のような変換（万子の場合）
+        if (tileText.endsWith('万')) {
+            return tileText.replace('万', '');
+        }
+
+        // 字牌はそのまま返す
+        return tileText;
     }
 
     /**
@@ -305,6 +421,11 @@ class WinningManager {
             this.ronBtn.style.display = 'inline-block';
             this.ronBtn.disabled = false;
             this.ronBtn.onclick = () => {
+                // ロン待機状態をキャンセル
+                this.socketManager.safeEmit('cancelRonWaiting', { 
+                    playerId: this.gameStateManager.getPlayerId() 
+                });
+                
                 if (this.socketManager.safeEmit('declareWin', { type: 'ron' })) {
                     this.ronBtn.disabled = true;
                     // 上がり宣言後は手牌を固定表示
@@ -325,6 +446,13 @@ class WinningManager {
      * 上がり宣言ボタンを非表示
      */
     hideWinningButtons() {
+        // ロン待機状態をキャンセル
+        if (this.socketManager && this.gameStateManager) {
+            this.socketManager.safeEmit('cancelRonWaiting', { 
+                playerId: this.gameStateManager.getPlayerId() 
+            });
+        }
+        
         if (this.tsumoBtn) {
             this.tsumoBtn.style.display = 'none';
         }

@@ -97,6 +97,15 @@ class GameEngine {
         return { success: false, error: '手牌が満杯です' };
       }
 
+      // ロン待機中の場合は自動牌引きをスキップ
+      if (player.ronWaiting) {
+        ErrorHandler.log('debug', '自動牌引きスキップ - ロン待機中', { 
+          gameId, 
+          playerId 
+        });
+        return { success: false, message: 'ロン待機中のため牌引きをスキップ' };
+      }
+
       if (game.isDeckEmpty()) {
         // 流局処理（要件6.1）
         ErrorHandler.log('info', '流局処理 - 山が空', { gameId });
@@ -379,12 +388,23 @@ class GameEngine {
       // リーチ後の牌捨て制限チェック（要件3.5, 7.4）
       if (player.isRiichi) {
         const lastDrawnTile = player.lastDrawnTile;
-        if (!lastDrawnTile || lastDrawnTile.id !== tileId) {
+        if (!lastDrawnTile) {
+          ErrorHandler.log('error', 'リーチ中だが最後に引いた牌が記録されていません', { 
+            gameId, 
+            playerId, 
+            tileId 
+          });
+          return { success: false, error: 'システムエラー: 引いた牌の記録がありません' };
+        }
+        
+        if (lastDrawnTile.id !== tileId) {
           ErrorHandler.log('warn', 'リーチ後の制限違反', { 
             gameId, 
             playerId, 
             tileId,
-            lastDrawnTileId: lastDrawnTile?.id 
+            lastDrawnTileId: lastDrawnTile.id,
+            attemptedTile: tileId,
+            allowedTile: lastDrawnTile.id
           });
           return { success: false, error: 'リーチ後は引いた牌以外を捨てることはできません' };
         }
@@ -405,6 +425,11 @@ class GameEngine {
       if (!discardedTile) {
         ErrorHandler.log('error', '牌を捨てることができない', { gameId, playerId, tileId });
         return { success: false, error: '牌を捨てることができませんでした' };
+      }
+
+      // リーチ後に牌を捨てた場合、lastDrawnTileをクリア
+      if (player.isRiichi && player.lastDrawnTile && player.lastDrawnTile.id === tileId) {
+        player.lastDrawnTile = null;
       }
 
       // ロン判定（相手プレイヤーがリーチしている場合）- 自動ロンは行わず、クライアント側でボタン表示

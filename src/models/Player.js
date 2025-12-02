@@ -14,6 +14,8 @@ class Player {
     this.reachTileIndex = -1; // リーチ牌のインデックス（-1は未設定）
     this.discardedTiles = []; // 捨て牌
     this.lastDrawnTile = null; // 最後に引いた牌（リーチ後制限用）
+    this.ronWaiting = false;  // ロン待機状態
+    this.ronWaitingStartTime = null; // ロン待機開始時刻
   }
 
   /**
@@ -154,6 +156,27 @@ class Player {
   }
 
   /**
+   * ロン待機状態を設定
+   * @param {boolean} waiting - 待機状態
+   */
+  setRonWaiting(waiting) {
+    this.ronWaiting = waiting;
+    this.ronWaitingStartTime = waiting ? Date.now() : null;
+  }
+
+  /**
+   * ロン待機状態がタイムアウトしているかチェック
+   * @param {number} timeoutMs - タイムアウト時間（ミリ秒、デフォルト: 10000）
+   * @returns {boolean} タイムアウトしているかどうか
+   */
+  isRonWaitingExpired(timeoutMs = 10000) {
+    if (!this.ronWaiting || !this.ronWaitingStartTime) {
+      return false;
+    }
+    return (Date.now() - this.ronWaitingStartTime) > timeoutMs;
+  }
+
+  /**
    * プレイヤーの状態をリセット
    */
   reset() {
@@ -162,6 +185,8 @@ class Player {
     this.reachTileIndex = -1;
     this.discardedTiles = [];
     this.lastDrawnTile = null;
+    this.ronWaiting = false;
+    this.ronWaitingStartTime = null;
   }
 }
 

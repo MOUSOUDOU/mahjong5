@@ -7,6 +7,9 @@ const path = require('path');
 const Game = require('./src/models/Game');
 const Player = require('./src/models/Player');
 const GameEngine = require('./src/models/GameEngine');
+const JudgmentEngine = require('./src/models/JudgmentEngine');
+const JudgmentErrorHandler = require('./src/utils/JudgmentErrorHandler');
+const StateValidator = require('./src/utils/StateValidator');
 const { ErrorHandler, ERROR_TYPES } = require('./src/utils/ErrorHandler');
 
 const app = express();
@@ -17,6 +20,8 @@ const PORT = process.env.PORT || 3000;
 
 // ゲームエンジンのインスタンス
 const gameEngine = new GameEngine();
+// 判定エンジンのインスタンス
+const judgmentEngine = new JudgmentEngine();
 
 // 入力検証スキーマ
 const VALIDATION_SCHEMAS = {
@@ -214,10 +219,55 @@ function cleanupFinishedGame(gameId) {
 }
 
 /**
+ * ゲーム終了処理
+ * @param {Game} game - ゲーム
+ * @param {Object} result - ゲーム終了結果
+ */
+function handleGameEnd(game, result) {
+  if (result.result === 'draw') {
+    const finalGameState = game.getGameState();
+    io.to(game.gameId).emit('gameEnded', {
+      result: 'draw',
+      message: result.message,
+      finalState: finalGameState
+    });
+    cleanupFinishedGame(game.gameId);
+  } else if (result.result === 'tsumo') {
+    const winner = game.getPlayer(result.winner);
+    const finalGameState = game.getGameState();
+
+    io.to(game.gameId).emit('gameEnded', {
+      result: 'tsumo',
+      winner: {
+        id: winner.id,
+        name: winner.name
+      },
+      winningTile: result.tile,
+      message: result.message,
+      finalState: finalGameState
+    });
+    cleanupFinishedGame(game.gameId);
+  }
+}
+
+/**
  * ゲーム状態を全プレイヤーに同期
  * @param {Game} game - 同期するゲーム
  */
 function syncGameState(game) {
+  // 手牌数の整合性チェック
+  game.players.forEach(player => {
+    const handSize = player.getHandSize();
+    if (handSize < 4 || handSize > 5) {
+      ErrorHandler.log('error', '手牌数異常を検出', {
+        gameId: game.gameId,
+        playerId: player.id,
+        handSize: handSize,
+        expectedRange: '4-5枚'
+      });
+    }
+  });
+
   game.players.forEach(player => {
     const gameStateForPlayer = game.getGameStateForPlayer(player.id);
     io.to(player.id).emit('gameStateUpdate', gameStateForPlayer);
@@ -244,52 +294,28 @@ function handleAutoDrawTile(game) {
     return;
   }
 
-  // 手牌が4枚の場合のみ自動牌引きを実行
+  // 手牌が4枚の場合のみ自動牌引きの確認を送信
   if (currentPlayer.getHandSize() === 4) {
-    const result = gameEngine.autoDrawTile(game.gameId, currentPlayer.id);
-
-    if (result.success) {
-      // 自動牌引きの通知
-      io.to(game.gameId).emit('autoTileDraw', {
+    // ロン待機状態をチェック
+    if (currentPlayer.ronWaiting) {
+      ErrorHandler.log('debug', '自動牌引きスキップ - ロン待機中', { 
         playerId: currentPlayer.id,
-        drawnTile: result.tile,
-        message: '自動的に牌を引きました'
+        gameId: game.gameId 
       });
-
-      // ゲーム終了の処理
-      if (result.gameEnded) {
-        if (result.result === 'draw') {
-          const finalGameState = game.getGameState();
-          io.to(game.gameId).emit('gameEnded', {
-            result: 'draw',
-            message: result.message,
-            finalState: finalGameState
-          });
-          cleanupFinishedGame(game.gameId);
-        } else if (result.result === 'tsumo') {
-          const winner = game.getPlayer(result.winner);
-          const finalGameState = game.getGameState();
-
-          io.to(game.gameId).emit('gameEnded', {
-            result: 'tsumo',
-            winner: {
-              id: winner.id,
-              name: winner.name
-            },
-            winningTile: result.tile,
-            message: result.message,
-            finalState: finalGameState
-          });
-          cleanupFinishedGame(game.gameId);
-        }
-      } else {
-        // ゲーム状態を再同期（自動牌引き後）
-        game.players.forEach(player => {
-          const gameStateForPlayer = game.getGameStateForPlayer(player.id);
-          io.to(player.id).emit('gameStateUpdate', gameStateForPlayer);
-        });
-      }
+      return; // ロン待機中は自動牌引きをスキップ
     }
+
+    // クライアントに自動牌引きの確認を送信（ロン判定の時間を与える）
+    ErrorHandler.log('debug', '自動牌引き確認をクライアントに送信', { 
+      playerId: currentPlayer.id,
+      gameId: game.gameId 
+    });
+    
+    io.to(currentPlayer.id).emit('autoDrawRequest', {
+      playerId: currentPlayer.id,
+      gameId: game.gameId
+    });
+    return;
   }
 }
 
@@ -1169,6 +1195,194 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ロン待機状態の管理
+  ErrorHandler.wrapSocketHandler(socket, 'ronWaiting', async (data) => {
+    const playerId = socket.id;
+    const { gameId } = data;
+
+    ErrorHandler.log('info', 'ロン待機状態開始', { playerId, gameId });
+
+    try {
+      const game = gameEngine.getGame(gameId);
+      if (!game) {
+        socket.emit('actionError', ErrorHandler.createErrorResponse(
+          ERROR_TYPES.GAME_NOT_FOUND,
+          'ゲームが見つかりません'
+        ));
+        return;
+      }
+
+      // プレイヤーがゲームに参加しているかチェック
+      const player = game.getPlayer(playerId);
+      if (!player) {
+        socket.emit('actionError', ErrorHandler.createErrorResponse(
+          ERROR_TYPES.PLAYER_NOT_FOUND,
+          'プレイヤーが見つかりません'
+        ));
+        return;
+      }
+
+      // ロン待機状態を設定
+      player.ronWaiting = true;
+      player.ronWaitingStartTime = Date.now();
+
+      ErrorHandler.log('debug', 'ロン待機状態設定完了', { 
+        playerId, 
+        gameId,
+        isRiichi: player.isRiichi 
+      });
+
+      // 10秒後に自動的にロン待機をキャンセル
+      setTimeout(() => {
+        if (player.ronWaiting) {
+          player.ronWaiting = false;
+          player.ronWaitingStartTime = null;
+          ErrorHandler.log('info', 'ロン待機状態タイムアウト', { playerId, gameId });
+          
+          // 0.5秒後に自動牌引きを実行
+          setTimeout(() => {
+            if (game && game.isPlayerTurn(playerId)) {
+              const result = gameEngine.autoDrawTile(gameId, playerId);
+              if (result.success) {
+                syncGameState(game);
+                socket.emit('autoTileDraw', {
+                  playerId: playerId,
+                  drawnTile: result.tile,
+                  message: '自動的に牌を引きました'
+                });
+              }
+            }
+          }, 500);
+        }
+      }, 10000);
+
+    } catch (error) {
+      ErrorHandler.log('error', 'ロン待機処理でエラー', {
+        playerId,
+        gameId,
+        error: error.message,
+        stack: error.stack
+      });
+
+      socket.emit('actionError', ErrorHandler.createErrorResponse(
+        ERROR_TYPES.CONNECTION_ERROR,
+        'ロン待機処理でエラーが発生しました'
+      ));
+    }
+  });
+
+  // 自動牌引き要求の処理
+  ErrorHandler.wrapSocketHandler(socket, 'requestAutoDraw', async (data) => {
+    const playerId = socket.id;
+    const { gameId } = data;
+
+    ErrorHandler.log('info', '自動牌引き要求を受信', { playerId, gameId });
+
+    try {
+      const game = gameEngine.getGame(gameId);
+      if (!game) {
+        socket.emit('actionError', ErrorHandler.createErrorResponse(
+          ERROR_TYPES.GAME_NOT_FOUND,
+          'ゲームが見つかりません'
+        ));
+        return;
+      }
+
+      const player = game.getPlayer(playerId);
+      if (!player) {
+        socket.emit('actionError', ErrorHandler.createErrorResponse(
+          ERROR_TYPES.PLAYER_NOT_FOUND,
+          'プレイヤーが見つかりません'
+        ));
+        return;
+      }
+
+      // ロン待機中でないことを確認
+      if (player.ronWaiting) {
+        ErrorHandler.log('debug', '自動牌引き拒否 - ロン待機中', { playerId, gameId });
+        return;
+      }
+
+      // 自動牌引きを実行
+      const result = gameEngine.autoDrawTile(gameId, playerId);
+      if (result.success) {
+        syncGameState(game);
+        socket.emit('autoTileDraw', {
+          playerId: playerId,
+          drawnTile: result.tile,
+          message: '自動的に牌を引きました'
+        });
+
+        // ゲーム終了の処理
+        if (result.gameEnded) {
+          handleGameEnd(game, result);
+        }
+      }
+
+    } catch (error) {
+      ErrorHandler.log('error', '自動牌引き要求処理でエラー', {
+        playerId,
+        gameId,
+        error: error.message,
+        stack: error.stack
+      });
+
+      socket.emit('actionError', ErrorHandler.createErrorResponse(
+        ERROR_TYPES.CONNECTION_ERROR,
+        '自動牌引き要求処理でエラーが発生しました'
+      ));
+    }
+  });
+
+  // ロン待機状態のキャンセル
+  ErrorHandler.wrapSocketHandler(socket, 'cancelRonWaiting', async (data) => {
+    const playerId = socket.id;
+
+    ErrorHandler.log('info', 'ロン待機状態キャンセル', { playerId });
+
+    try {
+      // プレイヤーが参加しているゲームを検索
+      const gameId = playerGameMap.get(playerId);
+      if (!gameId) {
+        return; // ゲームに参加していない場合は何もしない
+      }
+
+      const game = gameEngine.getGame(gameId);
+      if (!game) {
+        return; // ゲームが存在しない場合は何もしない
+      }
+
+      const player = game.getPlayer(playerId);
+      if (player) {
+        player.ronWaiting = false;
+        player.ronWaitingStartTime = null;
+        ErrorHandler.log('debug', 'ロン待機状態キャンセル完了', { playerId, gameId });
+        
+        // 0.5秒後に自動牌引きを実行（手番の場合のみ）
+        setTimeout(() => {
+          if (game && game.isPlayerTurn(playerId)) {
+            const result = gameEngine.autoDrawTile(gameId, playerId);
+            if (result.success) {
+              syncGameState(game);
+              socket.emit('autoTileDraw', {
+                playerId: playerId,
+                drawnTile: result.tile,
+                message: '自動的に牌を引きました'
+              });
+            }
+          }
+        }, 500);
+      }
+
+    } catch (error) {
+      ErrorHandler.log('error', 'ロン待機キャンセル処理でエラー', {
+        playerId,
+        error: error.message,
+        stack: error.stack
+      });
+    }
+  });
+
   // プレイヤー切断処理
   socket.on('disconnect', () => {
     const playerId = socket.id;
@@ -1183,6 +1397,122 @@ io.on('connection', (socket) => {
     } catch (error) {
       ErrorHandler.log('error', 'プレイヤー切断処理でエラー', { playerId, error: error.message });
     }
+  });
+
+  // ========== 判定API エンドポイント ==========
+  
+  // 自動引き判定API
+  ErrorHandler.wrapSocketHandler(socket, 'queryAutoDraw', async (data) => {
+    const result = await JudgmentErrorHandler.wrapJudgment(
+      async () => {
+        const { playerId, gameId } = data || {};
+        
+        // パラメータ検証
+        JudgmentErrorHandler.validateJudgmentParams(data, ['playerId', 'gameId']);
+        
+        const game = gameEngine.getGame(gameId);
+        if (!game) {
+          throw new Error('ゲームが見つかりません');
+        }
+        
+        // ゲーム状態の整合性チェック
+        const integrity = StateValidator.validateGameStateIntegrity(game);
+        if (!integrity.valid) {
+          console.warn('ゲーム状態の整合性に問題があります:', integrity.issues);
+        }
+        
+        return judgmentEngine.canAutoDraw(playerId, game);
+      },
+      'canAutoDraw',
+      data?.playerId
+    );
+    
+    socket.emit('autoDrawResult', {
+      playerId: data?.playerId,
+      queryId: data?.queryId,
+      ...result
+    });
+  });
+
+  // 自摸判定API
+  ErrorHandler.wrapSocketHandler(socket, 'queryTsumo', async (data) => {
+    const result = await JudgmentErrorHandler.wrapJudgment(
+      async () => {
+        const { playerId, gameId, drawnTile } = data || {};
+        
+        // パラメータ検証
+        JudgmentErrorHandler.validateJudgmentParams(data, ['playerId', 'gameId', 'drawnTile']);
+        
+        const game = gameEngine.getGame(gameId);
+        if (!game) {
+          throw new Error('ゲームが見つかりません');
+        }
+        
+        return judgmentEngine.checkTsumo(playerId, drawnTile, game);
+      },
+      'checkTsumo',
+      data?.playerId
+    );
+    
+    socket.emit('tsumoResult', {
+      playerId: data?.playerId,
+      queryId: data?.queryId,
+      ...result
+    });
+  });
+
+  // ロン判定API
+  ErrorHandler.wrapSocketHandler(socket, 'queryRon', async (data) => {
+    const result = await JudgmentErrorHandler.wrapJudgment(
+      async () => {
+        const { playerId, gameId, discardedTile } = data || {};
+        
+        // パラメータ検証
+        JudgmentErrorHandler.validateJudgmentParams(data, ['playerId', 'gameId', 'discardedTile']);
+        
+        const game = gameEngine.getGame(gameId);
+        if (!game) {
+          throw new Error('ゲームが見つかりません');
+        }
+        
+        return judgmentEngine.checkRon(playerId, discardedTile, game);
+      },
+      'checkRon',
+      data?.playerId
+    );
+    
+    socket.emit('ronResult', {
+      playerId: data?.playerId,
+      queryId: data?.queryId,
+      ...result
+    });
+  });
+
+  // リーチ判定API
+  ErrorHandler.wrapSocketHandler(socket, 'queryRiichi', async (data) => {
+    const result = await JudgmentErrorHandler.wrapJudgment(
+      async () => {
+        const { playerId, gameId, discardTile } = data || {};
+        
+        // パラメータ検証
+        JudgmentErrorHandler.validateJudgmentParams(data, ['playerId', 'gameId', 'discardTile']);
+        
+        const game = gameEngine.getGame(gameId);
+        if (!game) {
+          throw new Error('ゲームが見つかりません');
+        }
+        
+        return judgmentEngine.checkRiichi(playerId, discardTile, game);
+      },
+      'checkRiichi',
+      data?.playerId
+    );
+    
+    socket.emit('riichiResult', {
+      playerId: data?.playerId,
+      queryId: data?.queryId,
+      ...result
+    });
   });
 
   // 接続エラーハンドリング
