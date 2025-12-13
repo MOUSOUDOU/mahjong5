@@ -297,18 +297,10 @@ function setupModuleIntegration() {
                     winningManager.showWinningOptions(false, true);
                     errorHandler.showMessage('ロン可能です！', 3000);
                     
-                    // サーバーにロン待機状態を通知
-                    socketManager.safeEmit('ronWaiting', { 
-                        playerId: playerId,
-                        gameId: currentGameState.gameId 
-                    });
-                    
-                    // 10秒後に自動的にロン待機をキャンセル
+                    // サーバー側で既にロン待機状態が設定されているため、
+                    // クライアント側では10秒後にUIをクリアするだけ
                     setTimeout(() => {
-                        console.log('ロン待機タイムアウト - 自動キャンセル');
-                        socketManager.safeEmit('cancelRonWaiting', { 
-                            playerId: playerId 
-                        });
+                        console.log('ロン待機タイムアウト - UIクリア');
                         winningManager.hideWinningButtons();
                     }, 10000);
                 }

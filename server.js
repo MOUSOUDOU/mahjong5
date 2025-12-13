@@ -679,14 +679,55 @@ io.on('connection', (socket) => {
         // タイマーをクリア
         clearTurnTimer(playerId);
 
-        // ゲーム状態を同期
-        syncGameState(game);
-
-        // 捨て牌の通知
+        // 捨て牌の通知（ゲーム状態同期の前に送信）
         io.to(gameId).emit('tileDiscarded', {
           playerId: playerId,
           discardedTile: result.discardedTile
         });
+
+        // 相手プレイヤーのロン判定を実行
+        const opponent = game.getOpponentPlayer(playerId);
+        if (opponent && opponent.isRiichi && opponent.getHandSize() === 4) {
+          try {
+            const ronResult = await judgmentEngine.checkRon(opponent.id, result.discardedTile, game);
+            
+            if (ronResult.possible) {
+              // ロン可能な場合、ロン待機状態を設定
+              opponent.setRonWaiting();
+              
+              // 10秒後に自動的にロン待機状態を解除
+              opponent.ronWaitingTimeout = setTimeout(() => {
+                ErrorHandler.log('debug', 'ロン待機タイムアウト - 自動解除（discardTile内）', {
+                  playerId: opponent.id,
+                  gameId: game.gameId
+                });
+                opponent.clearRonWaiting();
+                
+                // タイムアウト後に自動牌引きを実行
+                if (game && game.isPlayerTurn(opponent.id)) {
+                  const autoDrawResult = gameEngine.autoDrawTile(gameId, opponent.id);
+                  if (autoDrawResult.success) {
+                    syncGameState(game);
+                  }
+                }
+              }, 10000);
+              
+              ErrorHandler.log('debug', 'ロン待機状態を設定（discardTile内）', {
+                playerId: opponent.id,
+                gameId: game.gameId
+              });
+            }
+          } catch (error) {
+            ErrorHandler.log('error', 'ロン判定でエラー（discardTile内）', {
+              gameId,
+              opponentId: opponent.id,
+              error: error.message
+            });
+          }
+        }
+
+        // ゲーム状態を同期
+        syncGameState(game);
 
         // ロン判定の結果処理
         if (result.gameEnded && result.result === 'ron') {
@@ -1552,30 +1593,8 @@ io.on('connection', (socket) => {
       data?.playerId
     );
     
-    // ロン可能な場合、ロン待機状態を設定
-    if (result.possible) {
-      const game = gameEngine.getGame(data?.gameId);
-      if (game) {
-        const player = game.getPlayer(data?.playerId);
-        if (player) {
-          player.setRonWaiting();
-          
-          // 10秒後に自動的にロン待機状態を解除
-          player.ronWaitingTimeout = setTimeout(() => {
-            ErrorHandler.log('debug', 'ロン待機タイムアウト - 自動解除', {
-              playerId: player.id,
-              gameId: game.gameId
-            });
-            player.clearRonWaiting();
-          }, 10000);
-          
-          ErrorHandler.log('debug', 'ロン待機状態を設定', {
-            playerId: player.id,
-            gameId: game.gameId
-          });
-        }
-      }
-    }
+    // ロン待機状態は既にdiscardTile内で設定されているため、ここでは設定しない
+    // クライアント側の互換性のため、結果のみを返す
     
     socket.emit('ronResult', {
       playerId: data?.playerId,

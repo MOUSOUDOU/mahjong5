@@ -3,7 +3,7 @@
     "locale": "ja",
     "editor.fontFamily": "PlemolJP, 'BIZ UDゴシック', 'BIZ UDPGothic', 'Yu Gothic UI', 'Meiryo UI', monospace",
     "terminal.integrated.fontFamily": "PlemolJP,'BIZ UDPGothic', 'Yu Gothic UI', 'Meiryo UI', monospace",
-    "workbench.colorTheme": "Default Dark+",
+    "workbench.colorTheme": "Default Light+",
     "files.autoGuessEncoding": true,
     "files.encoding": "utf8",
     "terminal.integrated.profiles.windows": {
